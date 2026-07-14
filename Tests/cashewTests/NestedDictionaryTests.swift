@@ -293,7 +293,7 @@ struct NestedDictionaryOperationsTests {
 
         let topHeader = try HeaderImpl(node: top)
         let fetcher = TestStoreFetcher()
-        try topHeader.storeRecursively(storer: fetcher)
+        try await topHeader.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<TopDict>(rawCID: topHeader.rawCID)
         let resolved = try await unresolved.resolveRecursive(fetcher: fetcher)
@@ -788,12 +788,12 @@ struct NestedTransformsTests {
     @Test("Transform nested dictionary via header with multi-level path")
     func testNestedDictTransformViaHeader() async throws {
         typealias Inner = MerkleDictionaryImpl<String>
-        typealias Outer = MerkleDictionaryImpl<HeaderImpl<Inner>>
+        typealias Outer = MerkleDictionaryImpl<VolumeImpl<Inner>>
 
         let inner = try Inner(children: [:], count: 0)
             .inserting(key: "name", value: "Alice")
             .inserting(key: "role", value: "engineer")
-        let innerHeader = try HeaderImpl(node: inner)
+        let innerHeader = try VolumeImpl(node: inner)
 
         let outer = try Outer(children: [:], count: 0)
             .inserting(key: "user1", value: innerHeader)
@@ -803,7 +803,7 @@ struct NestedTransformsTests {
         let updatedInner = try Inner(children: [:], count: 0)
             .inserting(key: "name", value: "Bob")
             .inserting(key: "role", value: "manager")
-        let updatedInnerHeader = try HeaderImpl(node: updatedInner)
+        let updatedInnerHeader = try VolumeImpl(node: updatedInner)
 
         var transforms = ArrayTrie<Transform>()
         transforms.set(["user1"], value: .update(updatedInnerHeader.description))
@@ -812,8 +812,8 @@ struct NestedTransformsTests {
         #expect(result.rawCID != outerHeader.rawCID)
 
         let fetcher = TestStoreFetcher()
-        try updatedInnerHeader.storeRecursively(storer: fetcher)
-        try result.storeRecursively(storer: fetcher)
+        try await updatedInnerHeader.storeRecursively(storer: fetcher)
+        try await result.storeAsVolume(storer: fetcher)
         let resolved = try await HeaderImpl<Outer>(rawCID: result.rawCID).resolveRecursive(fetcher: fetcher)
         let user1 = try resolved.node!.get(key: "user1")!
         #expect(try user1.node!.get(key: "name") == "Bob")
@@ -823,11 +823,11 @@ struct NestedTransformsTests {
     @Test("Transform nested dict: insert new inner dict alongside existing")
     func testTransformInsertNewInnerDict() async throws {
         typealias Inner = MerkleDictionaryImpl<String>
-        typealias Outer = MerkleDictionaryImpl<HeaderImpl<Inner>>
+        typealias Outer = MerkleDictionaryImpl<VolumeImpl<Inner>>
 
         let inner1 = try Inner(children: [:], count: 0)
             .inserting(key: "a", value: "1")
-        let h1 = try HeaderImpl(node: inner1)
+        let h1 = try VolumeImpl(node: inner1)
 
         let outer = try Outer(children: [:], count: 0)
             .inserting(key: "existing", value: h1)
@@ -835,7 +835,7 @@ struct NestedTransformsTests {
         let inner2 = try Inner(children: [:], count: 0)
             .inserting(key: "b", value: "2")
             .inserting(key: "c", value: "3")
-        let h2 = try HeaderImpl(node: inner2)
+        let h2 = try VolumeImpl(node: inner2)
 
         var transforms = ArrayTrie<Transform>()
         transforms.set(["added"], value: .insert(h2.description))
@@ -844,10 +844,10 @@ struct NestedTransformsTests {
         #expect(result.count == 2)
 
         let fetcher = TestStoreFetcher()
-        try h1.storeRecursively(storer: fetcher)
-        try h2.storeRecursively(storer: fetcher)
+        try await h1.storeRecursively(storer: fetcher)
+        try await h2.storeRecursively(storer: fetcher)
         let resultHeader = try HeaderImpl(node: result)
-        try resultHeader.storeRecursively(storer: fetcher)
+        try await resultHeader.storeAsVolume(storer: fetcher)
         let resolved = try await HeaderImpl<Outer>(rawCID: resultHeader.rawCID)
             .resolveRecursive(fetcher: fetcher)
 

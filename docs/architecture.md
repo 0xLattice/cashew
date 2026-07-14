@@ -41,8 +41,9 @@ Sources/cashew/
 ├── Resolver/              lazy resolution: ResolutionStrategy, *+resolve.swift
 ├── Transform/             batch mutation: Transform, *+transform.swift
 ├── Proofs/                SparseMerkleProof, *+proofs.swift
-├── Fetcher/               persistence boundary: Fetcher, Storer, KeyProvider,
-│                          VolumeAware* , *+store.swift
+├── Fetcher/               persistence boundary: Fetcher, ContentSource,
+│                          Storer, VolumeStorer,
+│                          StorageStrategy, *+store.swift
 ├── Diff/                  CashewDiff, *+diff.swift
 ├── Query/                 CashewParser, Expression, Plan, Executor, Queryable
 ├── Encryption/            EncryptionStrategy, *+encrypt.swift
@@ -62,7 +63,7 @@ structure needs structure-aware logic (most often `RadixNode` and
 | `Resolver` | On-demand loading of nodes from a `Fetcher`, governed by `ResolutionStrategy`. |
 | `Transform` | Batch insert/update/delete applied to a trie, producing a new structurally-shared root. |
 | `Proofs` | Sparse Merkle proof construction (pruning a tree down to the witnesses for a set of keys). |
-| `Fetcher` | The `Fetcher`/`Storer` persistence ports, `KeyProvider`, and recursive store traversal. |
+| `Fetcher` | The `Fetcher`/`ContentSource` read ports, sparse `Storer` and complete `VolumeStorer` write ports, `KeyProvider`, and storage planning. |
 | `Diff` | Structural difference between two dictionary roots. |
 | `Query` | A small pipe-delimited query language compiled to transform/evaluate steps. |
 | `Encryption` | Per-node AES-GCM encryption applied selectively across a subtree. |
@@ -142,7 +143,7 @@ Concrete Impls (generic over the value/node type):
 
 - **`Node`** requires only `get(property:)`, `properties()`, and
   `set(properties:)`. Everything else — `resolve`, `transform`, `proof`,
-  `storeRecursively`, `encrypt`, and the whole query interface — is a default
+  `storeVolumes`, `encrypt`, and the whole query interface — is a default
   protocol-extension implementation. `Codable` and `LosslessStringConvertible`
   are derived from DAG-CBOR/JSON serialization.
 - **`Header`** pairs a `rawCID` with an optional in-memory `node`. When `node`
@@ -220,12 +221,15 @@ does not change CIDs, and resolution treats it exactly like any other `Header`
 (batching, see §5, handles locality uniformly — there is no Volume-specific
 fetch path). Its behavioral role is on the **storage/retention** side:
 
-- On storage, the recursive walker emits `enterVolume`/`exitVolume` calls to a
-  `VolumeAwareStorer` at each Volume boundary, and deliberately stores non-Volume
-  children *before* Volume children so each volume's contiguous byte group stays
-  intact (`Sources/cashew/Fetcher/Node+store.swift`,
-  `Sources/cashew/Fetcher/VolumeAwareStorer.swift`). This groups bytes by volume
-  for contiguous storage and per-volume pinning/garbage-collection.
+- On storage, Cashew serializes the complete current boundary and sends one
+  `SerializedVolume` to a `VolumeStorer`. Empty, targeted, and recursive storage
+  plans choose which nested Volume boundaries to cross. The planner uses the same
+  structural and compressed-radix paths as resolution
+  (`Sources/cashew/Fetcher/Volume+store.swift`).
+
+- Relationships between Volume roots remain encoded in the content-addressed
+  nodes. Storage does not duplicate them as retention metadata;
+  applications that retain several related Volumes pin each root explicitly.
 
 Volumes nest, so a tree can carry boundaries at multiple levels.
 
@@ -236,9 +240,9 @@ Volume boundary**. A `VolumeMerkleDictionary` is a dictionary whose children are
 `VolumeRadixHeader`s — making each trie node an independently
 pinnable/groupable storage unit, rather than only the outer root.
 
-## 7. The Fetcher / Storer Persistence Boundary
+## 7. The Persistence Boundary
 
-cashew defines no storage engine. It defines two narrow ports
+cashew defines no storage engine. It defines four narrow ports
 (`Sources/cashew/Fetcher/`):
 
 ```swift
@@ -250,16 +254,20 @@ protocol ContentSource: Sendable {     // batched read (the preferred port)
     func fetch(_ cids: Set<String>) async -> [String: Data]
 }
 
-protocol Storer {
-    func store(rawCid: String, data: Data) throws
-    func contains(rawCid: String) -> Bool   // default: false
+protocol Storer: Sendable {           // arbitrary sparse write
+    func store(entries: [String: Data]) async throws
+}
+
+protocol VolumeStorer: Sendable {     // complete-boundary write
+    func store(volume: SerializedVolume) async throws
 }
 ```
 
 A `Fetcher` maps one CID → bytes; a `ContentSource` maps a *set* of CIDs →
 bytes in one call (a networked backend turns each into a single round trip);
-a `Storer` maps CID → write. The Lattice node supplies concrete implementations
-(broker-backed: memory → disk → network). `CoalescingFetcher` adapts a
+`Storer` persists an arbitrary verified block set; and `VolumeStorer` persists
+one complete storage boundary. A backend may implement either or both write
+contracts. `CoalescingFetcher` adapts a
 `ContentSource` to the per-CID `Fetcher` the resolver walks (see §5), so
 resolution can run over either port; new backends should implement
 `ContentSource` to get batching.
@@ -267,16 +275,18 @@ cashew's job is the DAG walk and the integrity checks around these calls:
 
 - **Read.** `Header.fetchAndDecodeNode(fetcher:)` calls `fetcher.fetch`,
   verifies the returned bytes hash back to the expected CID, decrypts if needed,
-  and decodes the node.
-- **Write.** `Header.storeRecursively(storer:)`
-  (`Sources/cashew/Fetcher/Header+store.swift`) is the inverse: it serializes
-  the loaded node (re-encrypting from `encryptionInfo` when present), calls
-  `storer.store`, then recurses into the node's children. `contains` lets a
-  store short-circuit already-persisted CIDs, so re-storing a structurally-shared
-  tree only writes the changed path.
+  and decodes the node. `resolve(..., cache:)` writes each fetched block to a
+  `Storer` only after that verification succeeds.
+- **Sparse write.** `Header.store(paths:storer:)` emits exactly the blocks the
+  same `ResolutionStrategy` plan would fetch. Unselected unresolved references
+  are allowed; a selected unresolved Header fails before the batch is emitted.
+- **Complete write.** `Volume.store(paths:storer:)` or
+  `Volume.storeRecursively(storer:)`. It builds each `SerializedVolume` in memory
+  and verifies every entry before the async sink call, then walks only the
+  selected nested boundaries.
 
 `KeyProvider` (`Sources/cashew/Fetcher/KeyProvider.swift`) maps a key-hash to a
-`SymmetricKey`. A `Fetcher` or `Storer` that also conforms to `KeyProvider`
+`SymmetricKey`. A `Fetcher`, `Storer`, or `VolumeStorer` that also conforms to `KeyProvider`
 enables transparent decrypt-on-read / encrypt-on-write for encrypted nodes; the
 `encryptionInfo.keyHash` selects the key.
 
@@ -302,21 +312,32 @@ caller has a root Header (rawCID only, node == nil)
           → per property: recurse / targeted-fetch / leave unresolved
   → returns a new Header with the requested subtree's nodes populated,
     same rawCID throughout
+
+Optional: resolve(..., cache: blockStore)
+  → verify each fetched block against its CID
+  → blockStore.store(entries:)                  // verified read-through cache
 ```
 
 ### 8.2 Write
 
 ```
-caller mutates an in-memory root (see data-structures.md §Transforms)
+caller mutates an in-memory Header or Volume root (see data-structures.md §Transforms)
   → newRoot = root.transform(transforms: ArrayTrie<Transform>)
       → only the path from each changed leaf to the root is rebuilt;
         untouched subtrees keep their existing Header (and CID)
-  → newRoot.storeRecursively(storer:)
-      → for each Header with a loaded node:
-          if storer.contains(rawCID) { skip }      // already persisted / shared
-          serialize (encrypt if encryptionInfo)    // node → bytes
-          storer.store(rawCID, data)               // CID → bytes
-          recurse into children
+
+Sparse DAG:
+  → newRoot.store(paths: resolutionPaths, storer: blockStore)
+      → run the same selection walk as resolve(paths:)
+      → serialize and verify only selected materialized blocks
+      → blockStore.store(entries:)
+
+Complete Volume boundary:
+  → newVolume.store(paths: storagePaths, storer: volumeStore)
+      → serialize the root and ordinary descendants up to each Volume boundary
+      → verify every serialized entry against its CID
+      → volumeStore.store(SerializedVolume(...))
+      → repeat only for selected nested Volumes
   → the new root CID is the durable handle to the new version
 ```
 

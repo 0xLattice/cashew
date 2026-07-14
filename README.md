@@ -33,11 +33,11 @@ var dict = MerkleDictionaryImpl<String>()
 dict = try dict.inserting(key: "alice", value: "engineer")
 dict = try dict.inserting(key: "bob", value: "designer")
 
-let header = try HeaderImpl(node: dict)
-print(header.rawCID) // "baguqeera..." — unique fingerprint of this exact data
+let volume = try VolumeImpl(node: dict)
+print(volume.rawCID) // "baguqeera..." — unique fingerprint of this exact data
 
-// Persist the whole tree to any content-addressable store
-try header.storeRecursively(storer: myStore)
+// Persist one complete storage boundary
+try await volume.store(storer: myStore)
 ```
 
 Every version of the data gets a unique CID. Insert one more key and the CID changes, but the branches you didn't touch keep their CIDs and are shared with the previous version.
@@ -45,11 +45,11 @@ Every version of the data gets a unique CID. Insert one more key and the CID cha
 ## Key concepts
 
 - **Content addressing** — every node is identified by a CID, a hash of its deterministic DAG-CBOR serialization. Identity is derived from content, not location, so the same data can be stored and fetched anywhere and verified without trusting the source.
-- **Headers and lazy resolution** — a `Header` is a smart pointer holding a CID and, optionally, the node it refers to. `node == nil` means "unresolved": you know the hash but haven't loaded the data. `resolve(paths:fetcher:)` pulls only the branches you ask for from a per-CID `Fetcher`; `resolve(paths:source:)` does the same over a **batched `ContentSource`**, coalescing each concurrent wave of child fetches into one request (one round trip per level instead of per node).
+- **Headers and sparse DAGs** — a `Header` is a smart pointer holding a CID and, optionally, the node it refers to. `node == nil` means "unresolved": you know the hash but haven't loaded the data. `resolve(paths:fetcher:)` pulls only the branches you ask for, while `store(paths:storer:)` persists exactly the blocks the same resolution plan would fetch. Batched reads use `ContentSource`, and `resolve(..., cache:)` can retain verified fetched blocks explicitly.
 - **Merkle data structures** — `MerkleDictionary` is the top-level key-value map, dispatching by first character into a compressed radix trie. `MerkleArray` is an append-only ordered collection backed by a dictionary with 256-bit binary keys; `MerkleSet` is a membership-only set. All share the same content-addressing, resolution, transform, and proof machinery.
 - **Transforms** — mutations (`insert` / `update` / `delete`) applied via `transform(transforms:)` or the per-key `inserting`/`mutating`/`deleting` helpers. Each returns a new tree with recomputed CIDs for the changed nodes only.
 - **Proofs** — sparse Merkle proofs materialize the minimal subtree needed to verify that a key exists, doesn't exist, or can be modified, leaving unrelated branches as CID stubs.
-- **Volumes** — a `Volume` is a `Header` subtype marking a boundary in the DAG where the nodes beneath it form a co-located group (an independently fetchable/retainable unit). It is a *boundary marker*: resolution treats a `Volume` exactly like any other `Header` (batching handles locality uniformly), and on **storage** the recursive walker groups each volume's bytes contiguously via a `VolumeAwareStorer`. Use it to define what gets pinned/served/garbage-collected as a unit.
+- **Volumes** — a `Volume` is a `Header` subtype marking an independently fetchable and retainable boundary in the DAG. Cashew emits each selected boundary as one complete `SerializedVolume`; nested Volumes are selected with `StorageStrategy.targeted` or `.recursive` paths that follow the same traversal rules as resolution. Relationships remain encoded only in the content-addressed nodes.
 
 ## Installation
 
@@ -99,7 +99,18 @@ paths.set(["users", "a"], value: .targeted)  // fetch just this node
 paths.set(["config"], value: .recursive)     // fetch the entire subtree
 paths.set(["posts"], value: .list)           // fetch structure only, values stay CID-only
 
-let resolved = try await dictionary.resolve(paths: paths, fetcher: IPFSFetcher())
+let root = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: rootCID)
+let resolved = try await root.resolve(paths: paths, fetcher: IPFSFetcher())
+
+// Persist exactly the materialized blocks selected by the same path language.
+try await resolved.store(paths: paths, storer: blockStore)
+
+// Or populate a verified read-through cache while resolving.
+let cached = try await root.resolve(
+    paths: paths,
+    fetcher: IPFSFetcher(),
+    cache: blockStore
+)
 ```
 
 Same content always yields the same CID, so equal trees are interchangeable references:

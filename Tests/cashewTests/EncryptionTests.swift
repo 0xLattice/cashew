@@ -163,7 +163,7 @@ struct EncryptedHeaderTests {
 
         let scalar = TestScalar(val: 42)
         let encHeader = try HeaderImpl(node: scalar, key: key)
-        try encHeader.storeRecursively(storer: fetcher)
+        try await encHeader.storeAsVolume(storer: fetcher)
 
         let cidOnly = HeaderImpl<TestScalar>(rawCID: encHeader.rawCID, node: nil, encryptionInfo: encHeader.encryptionInfo)
         let resolved = try await cidOnly.resolve(fetcher: fetcher)
@@ -178,7 +178,7 @@ struct EncryptedHeaderTests {
         storeFetcher.registerKey(key)
 
         let encHeader = try HeaderImpl(node: TestScalar(val: 1), key: key)
-        try encHeader.storeRecursively(storer: storeFetcher)
+        try await encHeader.storeAsVolume(storer: storeFetcher)
 
         let plainFetcher = TestStoreFetcher()
         let encryptedData = try await storeFetcher.fetch(rawCid: encHeader.rawCID)
@@ -195,7 +195,7 @@ struct EncryptedHeaderTests {
         let fetcher = TestKeyProvidingStoreFetcher()
         let scalar = TestScalar(val: 99)
         let header = try HeaderImpl(node: scalar)
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let cidOnly = HeaderImpl<TestScalar>(rawCID: header.rawCID)
         let resolved = try await cidOnly.resolve(fetcher: fetcher)
@@ -212,7 +212,7 @@ struct EncryptedHeaderTests {
         let valueHeader = try HeaderImpl(node: TestScalar(val: 7))
         let node = RH.NodeType(prefix: "test", value: valueHeader, children: [:])
         let encHeader = try RH(node: node, key: key)
-        try encHeader.storeRecursively(storer: fetcher)
+        try await encHeader.storeAsVolume(storer: fetcher)
 
         let cidOnly = RH(rawCID: encHeader.rawCID, node: nil, encryptionInfo: encHeader.encryptionInfo)
         let resolved = try await cidOnly.resolve(fetcher: fetcher)
@@ -229,7 +229,7 @@ struct EncryptedHeaderTests {
         source.registerKey(key)
 
         let encHeader = try HeaderImpl(node: TestScalar(val: 42), key: key)
-        try encHeader.storeRecursively(storer: source)
+        try await encHeader.storeAsVolume(storer: source)
 
         let cidOnly = HeaderImpl<TestScalar>(rawCID: encHeader.rawCID, node: nil, encryptionInfo: encHeader.encryptionInfo)
         let resolved = try await cidOnly.resolve(source: source)
@@ -242,7 +242,7 @@ struct EncryptedHeaderTests {
         let keyed = TestKeyProvidingStoreFetcher()
         keyed.registerKey(key)
         let encHeader = try HeaderImpl(node: TestScalar(val: 7), key: key)
-        try encHeader.storeRecursively(storer: keyed)
+        try await encHeader.storeAsVolume(storer: keyed)
 
         // A plain source carries no keys — decryption must throw, not silently pass.
         let plain = TestStoreFetcher()
@@ -296,7 +296,7 @@ struct TargetedEncryptionTests {
         var encryption = ArrayTrie<EncryptionStrategy>()
         encryption.set(["alice"], value: .targeted(key))
         let encrypted = try header.encrypt(encryption: encryption)
-        try encrypted.storeRecursively(storer: fetcher)
+        try await encrypted.storeAsVolume(storer: fetcher)
 
         var paths = ArrayTrie<ResolutionStrategy>()
         paths.set(["alice"], value: .targeted)
@@ -396,7 +396,7 @@ struct TargetedEncryptionTests {
         var encryption = ArrayTrie<EncryptionStrategy>()
         encryption.set([""], value: .targeted(key))
         let encrypted = try header.encrypt(encryption: encryption)
-        try encrypted.storeRecursively(storer: fetcher)
+        try await encrypted.storeAsVolume(storer: fetcher)
 
         var paths = ArrayTrie<ResolutionStrategy>()
         paths.set([""], value: .list)
@@ -456,7 +456,7 @@ struct ListEncryptionTests {
         var encryption = ArrayTrie<EncryptionStrategy>()
         encryption.set([""], value: .list(key))
         let encrypted = try header.encrypt(encryption: encryption)
-        try encrypted.storeRecursively(storer: fetcher)
+        try await encrypted.storeAsVolume(storer: fetcher)
 
         var paths = ArrayTrie<ResolutionStrategy>()
         paths.set([""], value: .list)
@@ -512,7 +512,7 @@ struct RecursiveEncryptionTests {
         var encryption = ArrayTrie<EncryptionStrategy>()
         encryption.set([""], value: .recursive(key))
         let encrypted = try header.encrypt(encryption: encryption)
-        try encrypted.storeRecursively(storer: fetcher)
+        try await encrypted.storeAsVolume(storer: fetcher)
 
         let resolved = try await encrypted.removingNode().resolveRecursive(fetcher: fetcher)
         let aliceVal = try resolved.node!.get(key: "alice")
@@ -600,7 +600,7 @@ struct MixedEncryptionTests {
         encryption.set(["alice"], value: .targeted(key1))
         encryption.set(["bob"], value: .targeted(key2))
         let encrypted = try header.encrypt(encryption: encryption)
-        try encrypted.storeRecursively(storer: fetcher)
+        try await encrypted.storeAsVolume(storer: fetcher)
 
         var paths = ArrayTrie<ResolutionStrategy>()
         paths.set(["alice"], value: .targeted)
@@ -818,7 +818,7 @@ struct TransformEncryptionTests {
         transforms.set(["alice"], value: .delete)
         let transformed = try encrypted.transform(transforms: transforms, keyProvider: fetcher)!
 
-        try transformed.storeRecursively(storer: fetcher)
+        try await transformed.storeAsVolume(storer: fetcher)
 
         let resolved = try await transformed.removingNode().resolveRecursive(fetcher: fetcher)
         let bobVal = try resolved.node!.get(key: "bob")
@@ -884,7 +884,7 @@ struct EncryptionScenarioTests {
         tenants = try tenants.inserting(key: "bob", value: bobHeader)
         let root = try HeaderImpl(node: tenants)
 
-        try root.storeRecursively(storer: store)
+        try await root.storeAsVolume(storer: store)
 
         let resolved = try await root.removingNode().resolveRecursive(fetcher: store)
         let aliceResolved = try await resolved.node!.get(key: "alice")!.resolve(fetcher: store)
@@ -914,8 +914,8 @@ struct EncryptionScenarioTests {
         let aliceHeader = try ScalarHeader(node: TestScalar(val: 42), key: aliceKey)
         let bobHeader = try ScalarHeader(node: TestScalar(val: 99), key: bobKey)
 
-        try aliceHeader.storeRecursively(storer: fullStore)
-        try bobHeader.storeRecursively(storer: fullStore)
+        try await aliceHeader.storeAsVolume(storer: fullStore)
+        try await bobHeader.storeAsVolume(storer: fullStore)
 
         let aliceOnlyStore = TestKeyProvidingStoreFetcher()
         aliceOnlyStore.registerKey(aliceKey)
@@ -965,7 +965,7 @@ struct EncryptionScenarioTests {
         #expect(encPhone.encryptionInfo != nil)
         #expect(encAddress.encryptionInfo != nil)
 
-        try encrypted.storeRecursively(storer: store)
+        try await encrypted.storeAsVolume(storer: store)
         let resolved = try await encrypted.removingNode().resolveRecursive(fetcher: store)
         let emailResolved = try await resolved.node!.get(key: "email")!.resolve(fetcher: store)
         #expect(emailResolved.node!.val == 2001)
@@ -998,7 +998,7 @@ struct EncryptionScenarioTests {
         let budgetVal = try root.node!.get(key: "budgets")!
         #expect(budgetVal.encryptionInfo != nil)
 
-        try root.storeRecursively(storer: store)
+        try await root.storeAsVolume(storer: store)
         let resolved = try await root.removingNode().resolveRecursive(fetcher: store)
         let deptResolved = try await resolved.node!.get(key: "departments")!.resolve(fetcher: store)
         #expect(try deptResolved.node!.get(key: "engineering") == "50 people")
@@ -1041,7 +1041,7 @@ struct EncryptionScenarioTests {
         #expect(encPublic.encryptionInfo!.keyHash == publicKeyHash)
         #expect(encFinance.encryptionInfo!.keyHash == financeKeyHash)
 
-        try root.storeRecursively(storer: store)
+        try await root.storeAsVolume(storer: store)
         let resolved = try await root.removingNode().resolveRecursive(fetcher: store)
         let pubResolved = try await resolved.node!.get(key: "public")!.resolve(fetcher: store)
         #expect(try pubResolved.node!.get(key: "mission") == "Build great software")
@@ -1078,7 +1078,7 @@ struct EncryptionScenarioTests {
         let bobVal = try transformed.node!.get(key: "bob")!
         #expect(bobVal.encryptionInfo != nil)
 
-        try transformed.storeRecursively(storer: store)
+        try await transformed.storeAsVolume(storer: store)
 
         let resolved = try await transformed.removingNode().resolveRecursive(fetcher: store)
         let bobResolved = try await resolved.node!.get(key: "bob")!.resolve(fetcher: store)
@@ -1099,12 +1099,12 @@ struct EncryptionScenarioTests {
         dict = try dict.inserting(key: "label", value: try ScalarHeader(node: TestScalar(val: 100), key: key))
         let header = try HeaderImpl(node: dict)
 
-        try header.storeRecursively(storer: store)
+        try await header.storeAsVolume(storer: store)
 
         let newCounter = try ScalarHeader(node: TestScalar(val: 42), key: key)
         let mutated = try dict.mutating(key: "counter", value: newCounter)
         let mutatedHeader = try HeaderImpl(node: mutated)
-        try mutatedHeader.storeRecursively(storer: store)
+        try await mutatedHeader.storeAsVolume(storer: store)
 
         let resolved = try await mutatedHeader.removingNode().resolveRecursive(fetcher: store)
         let counterResolved = try await resolved.node!.get(key: "counter")!.resolve(fetcher: store)
@@ -1131,7 +1131,7 @@ struct EncryptionScenarioTests {
         let addedVal = try insertedHeader.node!.get(key: "added")!
         #expect(addedVal.encryptionInfo != nil)
 
-        try insertedHeader.storeRecursively(storer: store)
+        try await insertedHeader.storeAsVolume(storer: store)
         let resolved = try await insertedHeader.removingNode().resolveRecursive(fetcher: store)
         let addedResolved = try await resolved.node!.get(key: "added")!.resolve(fetcher: store)
         #expect(addedResolved.node!.val == 99)
@@ -1168,13 +1168,14 @@ struct EncryptionScenarioTests {
         #expect(item2After1.encryptionInfo != nil)
 
         let newItem3 = try ScalarHeader(node: TestScalar(val: 300))
-        try newItem3.storeRecursively(storer: store)
+        try await newItem3.storeAsVolume(storer: store)
         var transforms2 = ArrayTrie<Transform>()
         transforms2.set(["item3"], value: .update(newItem3.description))
         current = try current.transform(transforms: transforms2, keyProvider: store)!
         #expect(current.node!.count == 4)
 
-        try current.storeRecursively(storer: store)
+        current = try await current.resolveRecursive(fetcher: store)
+        try await current.storeAsVolume(storer: store)
         let resolved = try await current.removingNode().resolveRecursive(fetcher: store)
 
         #expect(try resolved.node!.get(key: "item1") == nil)
@@ -1204,7 +1205,7 @@ struct EncryptionScenarioTests {
         encryption.set([""], value: .recursive(key))
         let encrypted = try header.encrypt(encryption: encryption)
 
-        try encrypted.storeRecursively(storer: store)
+        try await encrypted.storeAsVolume(storer: store)
 
         let resolved = try await encrypted.removingNode().resolveRecursive(fetcher: store)
         #expect(resolved.node!.count == 50)
@@ -1245,7 +1246,7 @@ struct EncryptionScenarioTests {
         let result = try encrypted.transform(transforms: transforms, keyProvider: store)!
         #expect(result.node!.count == 40)
 
-        try result.storeRecursively(storer: store)
+        try await result.storeAsVolume(storer: store)
         let resolved = try await result.removingNode().resolveRecursive(fetcher: store)
 
         #expect(try resolved.node!.get(key: "r000") == nil)
@@ -1265,7 +1266,7 @@ struct EncryptionScenarioTests {
 
         let scalar = TestScalar(val: 777)
         let encrypted = try ScalarHeader(node: scalar, key: key)
-        try encrypted.storeRecursively(storer: store)
+        try await encrypted.storeAsVolume(storer: store)
 
         let description = encrypted.description
         #expect(description.hasPrefix("enc:"))
@@ -1295,7 +1296,7 @@ struct EncryptionScenarioTests {
         outer = try outer.inserting(key: "plain_child", value: try HeaderImpl(node: try AcceptanceInnerDict().inserting(key: "c", value: "3")))
         let root = try HeaderImpl(node: outer)
 
-        try root.storeRecursively(storer: store)
+        try await root.storeAsVolume(storer: store)
 
         let resolved = try await root.removingNode().resolveRecursive(fetcher: store)
 
@@ -1335,7 +1336,7 @@ struct EncryptionScenarioTests {
         let secX = try encrypted.node!.get(key: "secret_x")!
         #expect(secX.encryptionInfo != nil)
 
-        try encrypted.storeRecursively(storer: store)
+        try await encrypted.storeAsVolume(storer: store)
         let resolved = try await encrypted.removingNode().resolveRecursive(fetcher: store)
         let secXResolved = try await resolved.node!.get(key: "secret_x")!.resolve(fetcher: store)
         #expect(secXResolved.node!.val == 100)
@@ -1365,7 +1366,7 @@ struct EncryptionScenarioTests {
             #expect(val!.encryptionInfo != nil)
         }
 
-        try encrypted.storeRecursively(storer: store)
+        try await encrypted.storeAsVolume(storer: store)
         let resolved = try await encrypted.removingNode().resolveRecursive(fetcher: store)
 
         for (k, expected) in [("user", 1), ("username", 2), ("user_profile", 3), ("user_settings", 4), ("user_settings_theme", 5)] {
@@ -1457,7 +1458,7 @@ struct EncryptionScenarioTests {
         let mutated = try dict.mutating(key: "only", value: newVal)
         let mutatedHeader = try HeaderImpl(node: mutated)
 
-        try mutatedHeader.storeRecursively(storer: store)
+        try await mutatedHeader.storeAsVolume(storer: store)
 
         let resolved = try await mutatedHeader.removingNode().resolveRecursive(fetcher: store)
         let onlyResolved = try await resolved.node!.get(key: "only")!.resolve(fetcher: store)
@@ -1473,7 +1474,7 @@ struct EncryptionScenarioTests {
         dict = try dict.inserting(key: "b", value: try ScalarHeader(node: TestScalar(val: 2)))
         let header = try HeaderImpl(node: dict)
 
-        try header.storeRecursively(storer: store)
+        try await header.storeAsVolume(storer: store)
 
         let resolved = try await header.removingNode().resolveRecursive(fetcher: store)
         #expect(resolved.node!.count == 2)
@@ -1512,7 +1513,7 @@ struct EncryptionScenarioTests {
         let warehouseVal = try root.node!.get(key: "warehouse")!
         #expect(warehouseVal.encryptionInfo != nil)
 
-        try root.storeRecursively(storer: store)
+        try await root.storeAsVolume(storer: store)
 
         let resolved = try await root.removingNode().resolveRecursive(fetcher: store)
         let warehouseResolved = try await resolved.node!.get(key: "warehouse")!.resolve(fetcher: store)
@@ -1549,7 +1550,7 @@ struct EncryptionScenarioTests {
         let outerKeyHash = Data(SHA256.hash(data: outerKeyData)).base64EncodedString()
         #expect(branchVal.encryptionInfo!.keyHash == outerKeyHash)
 
-        try root.storeRecursively(storer: store)
+        try await root.storeAsVolume(storer: store)
         let resolved = try await root.removingNode().resolveRecursive(fetcher: store)
         let branchResolved = try await resolved.node!.get(key: "branch")!.resolve(fetcher: store)
         let dataVal = try branchResolved.node!.get(key: "data")!
@@ -1598,7 +1599,7 @@ struct EncryptionScenarioTests {
         let sharedVal = try encrypted.node!.get(key: "shared")!
         #expect(sharedVal.encryptionInfo!.keyHash == teamKeyHash)
 
-        try encrypted.storeRecursively(storer: store)
+        try await encrypted.storeAsVolume(storer: store)
         let resolved = try await encrypted.removingNode().resolveRecursive(fetcher: store)
 
         let aliceResolved = try await resolved.node!.get(key: "alice")!.resolve(fetcher: store)
@@ -1679,7 +1680,7 @@ struct EncryptionScenarioTests {
 
         let scalar = TestScalar(val: 42)
         let encrypted = try ScalarHeader(node: scalar, key: correctKey)
-        try encrypted.storeRecursively(storer: correctStore)
+        try await encrypted.storeAsVolume(storer: correctStore)
 
         let wrongStore = TestKeyProvidingStoreFetcher()
         wrongStore.registerKey(wrongKey)
@@ -1697,13 +1698,13 @@ struct EncryptionScenarioTests {
     }
 
     @Test("Store encrypted data without KeyProvider throws")
-    func testStoreWithoutKeyProviderThrows() throws {
+    func testStoreWithoutKeyProviderThrows() async throws {
         let key = SymmetricKey(size: .bits256)
         let encrypted = try ScalarHeader(node: TestScalar(val: 42), key: key)
 
         let plainStore = TestStoreFetcher()
-        #expect(throws: DataErrors.self) {
-            try encrypted.storeRecursively(storer: plainStore)
+        await #expect(throws: DataErrors.self) {
+            try await encrypted.storeAsVolume(storer: plainStore)
         }
     }
 }
@@ -1730,7 +1731,7 @@ func debugAliceStorage() async throws {
     print("alice rawCID:", aliceHeader.rawCID)
     print("alice encryptionInfo:", (aliceHeader as? HeaderImpl<TestScalar>)?.encryptionInfo != nil)
     
-    try encrypted.storeRecursively(storer: fetcher)
+    try await encrypted.storeAsVolume(storer: fetcher)
     
     // Check what's stored at alice's CID
     let aliceCID = aliceHeader.rawCID

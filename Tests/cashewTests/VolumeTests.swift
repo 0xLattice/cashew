@@ -5,7 +5,7 @@ import ArrayTrie
 
 // MARK: - Test helpers
 
-final class VolumeTestFetcher: Fetcher, Storer, @unchecked Sendable {
+final class VolumeTestFetcher: Fetcher, TestVolumeStore, @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [String: Data] = [:]
 
@@ -15,12 +15,12 @@ final class VolumeTestFetcher: Fetcher, Storer, @unchecked Sendable {
         return data
     }
 
-    func store(rawCid: String, data: Data) throws {
+    func storeRaw(rawCid: String, data: Data) {
         lock.withLock { storage[rawCid] = data }
     }
 }
 
-final class PlainTestFetcher: Fetcher, Storer, @unchecked Sendable {
+final class PlainTestFetcher: Fetcher, TestVolumeStore, @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [String: Data] = [:]
 
@@ -30,7 +30,7 @@ final class PlainTestFetcher: Fetcher, Storer, @unchecked Sendable {
         return data
     }
 
-    func store(rawCid: String, data: Data) throws {
+    func storeRaw(rawCid: String, data: Data) {
         lock.withLock { storage[rawCid] = data }
     }
 }
@@ -87,7 +87,7 @@ struct VolumeTests {
         #expect(vol.rawCID == header.rawCID)
     }
 
-    // MARK: - Resolution (a Volume resolves like any Header — no enterVolume hint)
+    // MARK: - Resolution (a Volume resolves like any Header)
 
     @Test("resolve(paths:fetcher:) resolves a targeted path")
     func resolvePathsTargeted() async throws {
@@ -98,7 +98,7 @@ struct VolumeTests {
         dict = try dict.inserting(key: "bob", value: "designer")
 
         let vol = try VolumeImpl(node: dict)
-        try vol.storeRecursively(storer: fetcher)
+        try await vol.storeRecursively(storer: fetcher)
 
         let cidOnly = VolumeImpl<MerkleDictionaryImpl<String>>(rawCID: vol.rawCID)
 
@@ -117,7 +117,7 @@ struct VolumeTests {
         dict = try dict.inserting(key: "k", value: "v")
 
         let vol = try VolumeImpl(node: dict)
-        try vol.storeRecursively(storer: fetcher)
+        try await vol.storeRecursively(storer: fetcher)
 
         let cidOnly = VolumeImpl<MerkleDictionaryImpl<String>>(rawCID: vol.rawCID)
         let resolved = try await cidOnly.resolveRecursive(fetcher: fetcher)
@@ -133,7 +133,7 @@ struct VolumeTests {
         dict = try dict.inserting(key: "k", value: "v")
 
         let vol = try VolumeImpl(node: dict)
-        try vol.storeRecursively(storer: fetcher)
+        try await vol.storeRecursively(storer: fetcher)
 
         let cidOnly = VolumeImpl<MerkleDictionaryImpl<String>>(rawCID: vol.rawCID)
         let resolved = try await cidOnly.resolve(fetcher: fetcher)
@@ -150,7 +150,7 @@ struct VolumeTests {
         dict = try dict.inserting(key: "bob", value: "designer")
 
         let vol = try VolumeImpl(node: dict)
-        try vol.storeRecursively(storer: fetcher)
+        try await vol.storeRecursively(storer: fetcher)
 
         let cidOnly = VolumeImpl<MerkleDictionaryImpl<String>>(rawCID: vol.rawCID)
 
@@ -171,7 +171,7 @@ struct VolumeTests {
         dict = try dict.inserting(key: "a", value: "1")
 
         let vol = try VolumeImpl(node: dict)
-        try vol.storeRecursively(storer: fetcher)
+        try await vol.storeRecursively(storer: fetcher)
 
         let cidOnly = VolumeImpl<MerkleDictionaryImpl<String>>(rawCID: vol.rawCID)
         let resolved = try await cidOnly.resolveRecursive(fetcher: fetcher)
@@ -189,7 +189,7 @@ struct VolumeTests {
         dict = try dict.inserting(key: "k", value: "v")
 
         let vol = try VolumeImpl(node: dict)
-        try vol.storeRecursively(storer: fetcher)
+        try await vol.storeRecursively(storer: fetcher)
 
         let cidOnly = VolumeImpl<MerkleDictionaryImpl<String>>(rawCID: vol.rawCID)
         let existential: any Header = cidOnly
@@ -210,7 +210,7 @@ struct VolumeTests {
         dict = try dict.inserting(key: "charlie", value: "manager")
 
         let vol = try VolumeImpl(node: dict)
-        try vol.storeRecursively(storer: fetcher)
+        try await vol.storeRecursively(storer: fetcher)
 
         let cidOnly = VolumeImpl<MerkleDictionaryImpl<String>>(rawCID: vol.rawCID)
         let resolved = try await cidOnly.resolveRecursive(fetcher: fetcher)
@@ -229,7 +229,7 @@ struct VolumeTests {
         innerDict = try innerDict.inserting(key: "leaf", value: "value")
         let innerVol = try VolumeImpl(node: innerDict)
         let outerVol = try VolumeImpl(node: NestedVolumeNode(inner: innerVol))
-        try outerVol.storeRecursively(storer: fetcher)
+        try await outerVol.storeRecursively(storer: fetcher)
 
         let cidOnly = VolumeImpl<NestedVolumeNode>(rawCID: outerVol.rawCID)
         var paths = ArrayTrie<SparseMerkleProof>()
@@ -246,7 +246,7 @@ struct VolumeTests {
         var dict = MerkleDictionaryImpl<String>()
         dict = try dict.inserting(key: "alice", value: "engineer")
         let vol = try VolumeImpl(node: dict)
-        try vol.storeRecursively(storer: fetcher)
+        try await vol.storeRecursively(storer: fetcher)
 
         let cidOnly = VolumeImpl<MerkleDictionaryImpl<String>>(rawCID: vol.rawCID)
         var paths = ArrayTrie<SparseMerkleProof>()

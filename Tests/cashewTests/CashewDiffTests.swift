@@ -160,8 +160,8 @@ struct CashewDiffTests {
         let store = TestStoreFetcher()
         let hOld = try HeaderImpl(node: old)
         let hNew = try HeaderImpl(node: new)
-        try hOld.storeRecursively(storer: store)
-        try hNew.storeRecursively(storer: store)
+        try await hOld.storeAsVolume(storer: store)
+        try await hNew.storeAsVolume(storer: store)
 
         let diff = try await HeaderImpl<DictOfDicts>(rawCID: hNew.rawCID)
             .diff(from: HeaderImpl<DictOfDicts>(rawCID: hOld.rawCID), fetcher: store)

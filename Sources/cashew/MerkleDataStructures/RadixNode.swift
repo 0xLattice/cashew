@@ -15,22 +15,6 @@ public protocol RadixNode: Node {
 }
 
 public extension RadixNode {
-    func storeRecursively(storer: Storer) throws {
-        for property in properties() {
-            guard let header = get(property: property) else { continue }
-            if let vrh = header as? any VolumeRadixHeader {
-                try vrh.storeRecursively(storer: storer)
-            } else {
-                try header.storeRecursively(storer: storer)
-            }
-        }
-        if value is any Header {
-            if let value = value {
-                try (value as! any Header).storeRecursively(storer: storer)
-            }
-        }
-    }
-    
     func set(properties: [PathSegment : any Header]) -> Self {
         var newProperties = [Character: ChildType]()
         for property in properties.keys {

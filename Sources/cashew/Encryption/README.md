@@ -34,19 +34,19 @@ The header carries `EncryptionInfo` metadata — a hash of the key used (`keyHas
 ### The Encrypt-Store-Resolve Cycle
 
 ```
-              encrypt                  store                     resolve
-  plaintext  -------->  encrypted   --------->   store    <---------  encrypted
-  header      (key)     header       (storer +    (CID →    (fetcher +  header
-                        + EncryptionInfo  KeyProvider) data)  KeyProvider)
+              encrypt                   store                      resolve
+  plaintext  -------->  encrypted   ---------->  store      <---------  encrypted
+  Volume      (key)     Volume       (VolumeStorer (Volumes)  (fetcher +  Volume
+                        + EncryptionInfo + KeyProvider)          KeyProvider)
                                                                   |
                                                                   v
                                                              plaintext
-                                                             header
+                                                             Volume
 ```
 
 1. **Encrypt**: Apply an `ArrayTrie<EncryptionStrategy>` to a header tree. Each matching path gets encrypted with AES-GCM using a random IV. The CID changes to reflect the ciphertext.
 
-2. **Store**: Call `storeRecursively(storer:)`. The storer must conform to `KeyProvider` so it can look up the key by hash. The header's stored IV is reused to deterministically reproduce the same ciphertext, ensuring the data's hash matches the CID.
+2. **Store**: Call `Volume.store(storer:)` or `storeRecursively(storer:)`. The `VolumeStorer` must also conform to `KeyProvider` so it can look up the key by hash. The header's stored IV is reused to deterministically reproduce the same ciphertext, ensuring the data's hash matches the CID.
 
 3. **Resolve**: Fetch data by CID. The fetcher (conforming to `KeyProvidingFetcher`) provides the decryption key. `decryptIfNeeded` transparently decrypts before deserialization.
 
@@ -75,10 +75,10 @@ encHeader.encryptionInfo?.iv       // base64(random nonce)
 
 ### Storing and Resolving Encrypted Data
 
-The storer and fetcher must be able to look up keys by their hash. Implement `KeyProvider` (for storers) or `KeyProvidingFetcher` (for fetchers that also provide keys):
+Sparse and Volume stores must be able to look up keys by their hash when serializing encrypted materialized nodes. Implement `KeyProvider` on the `Storer` or `VolumeStorer`, or `KeyProvidingFetcher` for reads:
 
 ```swift
-class MyStoreFetcher: Storer, Fetcher, KeyProvider {
+class MyStoreFetcher: Storer, VolumeStorer, Fetcher, KeyProvider {
     private var storage: [String: Data] = [:]
     private var keys: [String: SymmetricKey] = [:]
 
@@ -89,7 +89,12 @@ class MyStoreFetcher: Storer, Fetcher, KeyProvider {
     }
 
     func key(for keyHash: String) -> SymmetricKey? { keys[keyHash] }
-    func store(rawCid: String, data: Data) { storage[rawCid] = data }
+    func store(entries: [String: Data]) async {
+        storage.merge(entries) { _, new in new }
+    }
+    func store(volume: SerializedVolume) async {
+        storage.merge(volume.entries) { _, new in new }
+    }
     func fetch(rawCid: String) async throws -> Data {
         guard let data = storage[rawCid] else { throw MyError.notFound }
         return data
@@ -103,15 +108,15 @@ Store and resolve:
 let fetcher = MyStoreFetcher()
 fetcher.registerKey(key)
 
-// Store encrypted header
-let encHeader = try HeaderImpl(node: scalar, key: key)
-try encHeader.storeRecursively(storer: fetcher)
+// Store an encrypted Volume boundary
+let encVolume = try VolumeImpl(node: scalar, key: key)
+try await encVolume.store(storer: fetcher)
 
 // Resolve from just the CID + encryption metadata
-let cidOnly = HeaderImpl<MyScalar>(
-    rawCID: encHeader.rawCID,
+let cidOnly = VolumeImpl<MyScalar>(
+    rawCID: encVolume.rawCID,
     node: nil,
-    encryptionInfo: encHeader.encryptionInfo
+    encryptionInfo: encVolume.encryptionInfo
 )
 let resolved = try await cidOnly.resolve(fetcher: fetcher)
 resolved.node!  // decrypted scalar
@@ -125,12 +130,12 @@ Instead of encrypting the entire tree, encrypt specific paths:
 var dict = MerkleDictionaryImpl<HeaderImpl<MyScalar>>()
 dict = try dict.inserting(key: "public-field", value: HeaderImpl(node: MyScalar(value: 1)))
 dict = try dict.inserting(key: "secret-field", value: HeaderImpl(node: MyScalar(value: 2)))
-let header = try HeaderImpl(node: dict)
+let volume = try VolumeImpl(node: dict)
 
 // Only encrypt the value at "secret-field"
 var encryption = ArrayTrie<EncryptionStrategy>()
 encryption.set(["secret-field"], value: .targeted(key))
-let encrypted = try header.encrypt(encryption: encryption)
+let encrypted = try volume.encrypt(encryption: encryption)
 
 // "public-field" is still readable without any key
 let publicVal = try encrypted.node!.get(key: "public-field")!
@@ -175,7 +180,7 @@ When applied at a specific path (e.g., `["alice"]`), only the value at that path
 // Root targeted: encrypts trie structure, values stay plaintext
 var encryption = ArrayTrie<EncryptionStrategy>()
 encryption.set([""], value: .targeted(key))
-let encrypted = try header.encrypt(encryption: encryption)
+let encrypted = try volume.encrypt(encryption: encryption)
 
 // You CANNOT see what keys exist without the key
 // After decrypting the trie, values are plaintext CIDs
@@ -183,7 +188,7 @@ let encrypted = try header.encrypt(encryption: encryption)
 // Path-specific targeted: encrypts only the value at that path
 var encryption2 = ArrayTrie<EncryptionStrategy>()
 encryption2.set(["alice"], value: .targeted(key))
-let encrypted2 = try header.encrypt(encryption: encryption2)
+let encrypted2 = try volume.encrypt(encryption: encryption2)
 
 // You CAN see that "alice" exists as a key
 // You CANNOT read the value at "alice" without the key
@@ -199,7 +204,7 @@ Encrypts the **trie structure** (RadixHeaders). You cannot enumerate keys or nav
 ```swift
 var encryption = ArrayTrie<EncryptionStrategy>()
 encryption.set([""], value: .list(key))
-let encrypted = try header.encrypt(encryption: encryption)
+let encrypted = try volume.encrypt(encryption: encryption)
 
 // You CANNOT see what keys exist without the key
 // After decrypting the trie structure, values are plaintext CIDs
@@ -214,7 +219,7 @@ Encrypts **everything** — both the trie structure and all values — with the 
 ```swift
 var encryption = ArrayTrie<EncryptionStrategy>()
 encryption.set([""], value: .recursive(key))
-let encrypted = try header.encrypt(encryption: encryption)
+let encrypted = try volume.encrypt(encryption: encryption)
 
 // Nothing is readable without the key
 // Every header in the tree has encryptionInfo set
@@ -238,7 +243,7 @@ var encryption = ArrayTrie<EncryptionStrategy>()
 encryption.set([""], value: .recursive(teamKey))        // default: everything
 encryption.set(["alice"], value: .recursive(aliceKey))   // override: alice's subtree
 
-let encrypted = try header.encrypt(encryption: encryption)
+let encrypted = try volume.encrypt(encryption: encryption)
 
 // "bob" and all other keys use teamKey
 // "alice" and all her descendants use aliceKey
@@ -264,7 +269,7 @@ fetcher.registerKey(key)
 // Start with an encrypted tree
 var encryption = ArrayTrie<EncryptionStrategy>()
 encryption.set([""], value: .recursive(key))
-let encrypted = try header.encrypt(encryption: encryption)
+let encrypted = try volume.encrypt(encryption: encryption)
 
 // Delete a key — remaining headers stay encrypted
 var transforms = ArrayTrie<Transform>()
@@ -289,7 +294,7 @@ The rules for encryption preservation through transforms:
 Inserted values are not auto-encrypted because the framework can't know which key to use. To encrypt newly inserted content, use the combined transform+encrypt overload:
 
 ```swift
-let result = try header.transform(
+let result = try volume.transform(
     transforms: transforms,
     encryption: encryption,
     keyProvider: fetcher
@@ -307,11 +312,11 @@ A full lifecycle with encryption:
 var dict = MerkleDictionaryImpl<HeaderImpl<MyScalar>>()
 dict = try dict.inserting(key: "alice", value: HeaderImpl(node: MyScalar(value: 1)))
 dict = try dict.inserting(key: "bob", value: HeaderImpl(node: MyScalar(value: 2)))
-let header = try HeaderImpl(node: dict)
+let volume = try VolumeImpl(node: dict)
 
 var encryption = ArrayTrie<EncryptionStrategy>()
 encryption.set([""], value: .recursive(key))
-let encrypted = try header.encrypt(encryption: encryption)
+let encrypted = try volume.encrypt(encryption: encryption)
 
 // 2. Transform (delete alice, encryption preserved on bob)
 var transforms = ArrayTrie<Transform>()
@@ -319,7 +324,7 @@ transforms.set(["alice"], value: .delete)
 let transformed = try encrypted.transform(transforms: transforms, keyProvider: fetcher)!
 
 // 3. Store
-try transformed.storeRecursively(storer: fetcher)
+try await transformed.store(storer: fetcher)
 
 // 4. Resolve
 let resolved = try await transformed.removingNode().resolveRecursive(fetcher: fetcher)
@@ -338,7 +343,7 @@ let bobKey = SymmetricKey(size: .bits256)
 var encryption = ArrayTrie<EncryptionStrategy>()
 encryption.set(["alice"], value: .targeted(aliceKey))
 encryption.set(["bob"], value: .targeted(bobKey))
-let encrypted = try header.encrypt(encryption: encryption)
+let encrypted = try volume.encrypt(encryption: encryption)
 
 // A holder of aliceKey can read alice but not bob
 // A holder of bobKey can read bob but not alice
@@ -385,14 +390,15 @@ For resolve operations, the fetcher must also provide keys:
 public protocol KeyProvidingFetcher: Fetcher, KeyProvider {}
 ```
 
-A single type can conform to both `Storer` and `KeyProvidingFetcher` to handle the full lifecycle.
+A single type can conform to `Storer`, `VolumeStorer`, and `KeyProvidingFetcher` to handle sparse writes, complete boundaries, and reads.
 
 ### When Keys Are Needed
 
 | Operation | Requires KeyProvider? | Which protocol? |
 |-----------|----------------------|-----------------|
 | `encrypt(encryption:)` | No — keys are in the strategy | N/A |
-| `storeRecursively(storer:)` | Yes, if header is encrypted | `storer as? KeyProvider` |
+| `Header.store(paths:storer:)` | Yes, if a selected Header is encrypted | `storer as? KeyProvider` |
+| `Volume.store(storer:)` | Yes, if the Volume is encrypted | `storer as? KeyProvider` |
 | `resolve(fetcher:)` | Yes, if header is encrypted | `fetcher as? KeyProvider` |
 | `transform(transforms:keyProvider:)` | Yes, to preserve encryption | `KeyProvider` parameter |
 | `init(node:key:)` | No — key is passed directly | N/A |
@@ -412,7 +418,7 @@ The trade-off is that you cannot compare CIDs to check if two encrypted headers 
 
 ### Deterministic Re-Encryption at Store Time
 
-When `storeRecursively` is called, the header doesn't cache its encrypted bytes. Instead, it re-encrypts the node using the IV stored in `encryptionInfo`. Because AES-GCM is deterministic given the same (key, nonce, plaintext) triple, this produces identical ciphertext, and the resulting hash matches the header's CID.
+When a Volume is stored, the header doesn't cache its encrypted bytes. Instead, it re-encrypts the node using the IV stored in `encryptionInfo`. Because AES-GCM is deterministic given the same (key, nonce, plaintext) triple, this produces identical ciphertext, and the resulting hash matches the header's CID.
 
 This avoids storing encrypted data in the header object, keeping the header lightweight.
 
@@ -433,7 +439,7 @@ Encryption operations surface errors through `DataErrors`:
 | Error | When |
 |-------|------|
 | `encryptionFailed` | AES-GCM seal produced no combined output |
-| `keyNotFound` | `KeyProvider` returned nil, or storer/fetcher doesn't conform to `KeyProvider` |
+| `keyNotFound` | `KeyProvider` returned nil, or the volume store/fetcher doesn't conform to `KeyProvider` |
 | `invalidIV` | `EncryptionInfo.iv` is not valid base64 |
 | `nodeNotAvailable` | Tried to encrypt/transform a header with no loaded node |
 

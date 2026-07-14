@@ -24,7 +24,7 @@ struct StoreResolveLifecycleTests {
 
         let header = try HeaderImpl(node: outerDict)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<MerkleDictionaryImpl<HeaderImpl<InnerDict>>>(rawCID: header.rawCID)
         let resolved = try await unresolved.resolveRecursive(fetcher: fetcher)
@@ -46,7 +46,7 @@ struct StoreResolveLifecycleTests {
 
         let header = try HeaderImpl(node: dict)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: header.rawCID)
         let resolved = try await unresolved.resolveRecursive(fetcher: fetcher)
@@ -64,7 +64,7 @@ struct StoreResolveLifecycleTests {
         let dict = MerkleDictionaryImpl<String>(children: [:], count: 0)
         let header = try HeaderImpl(node: dict)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: header.rawCID)
             .resolveRecursive(fetcher: fetcher)
@@ -78,7 +78,7 @@ struct StoreResolveLifecycleTests {
             .inserting(key: "only", value: "one")
         let header = try HeaderImpl(node: dict)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: header.rawCID)
             .resolveRecursive(fetcher: fetcher)
@@ -94,7 +94,7 @@ struct StoreResolveLifecycleTests {
         let tHeader = try HeaderImpl(node: transformed)
         #expect(tHeader.rawCID != header.rawCID)
 
-        try tHeader.storeRecursively(storer: fetcher)
+        try await tHeader.storeAsVolume(storer: fetcher)
         let reresolved = try await HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: tHeader.rawCID)
             .resolveRecursive(fetcher: fetcher)
         #expect(try reresolved.node!.get(key: "only") == "updated")
@@ -154,7 +154,7 @@ struct StructuralSharingTests {
         let fetcher = TestStoreFetcher()
         let p1h = try HeaderImpl(node: parent1)
         let p2h = try HeaderImpl(node: parent2)
-        try p1h.storeRecursively(storer: fetcher)
+        try await p1h.storeAsVolume(storer: fetcher)
 
         let r1 = try await HeaderImpl<Outer>(rawCID: p1h.rawCID).resolveRecursive(fetcher: fetcher)
         let r2 = try await HeaderImpl<Outer>(rawCID: p2h.rawCID).resolveRecursive(fetcher: fetcher)
@@ -177,7 +177,7 @@ struct FullLifecycleTests {
 
         let header = try HeaderImpl(node: dict)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved1 = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: header.rawCID)
         let resolved1 = try await unresolved1.resolveRecursive(fetcher: fetcher)
@@ -189,7 +189,7 @@ struct FullLifecycleTests {
 
         let transformed = try resolved1.node!.transform(transforms: transforms)!
         let transformedHeader = try HeaderImpl(node: transformed)
-        try transformedHeader.storeRecursively(storer: fetcher)
+        try await transformedHeader.storeAsVolume(storer: fetcher)
 
         let unresolved2 = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: transformedHeader.rawCID)
         let resolved2 = try await unresolved2.resolveRecursive(fetcher: fetcher)
@@ -217,7 +217,7 @@ struct FullLifecycleTests {
 
         let header = try HeaderImpl(node: dict)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<ScalarDict>(rawCID: header.rawCID)
             .resolveRecursive(fetcher: fetcher)

@@ -50,7 +50,6 @@ public protocol Header: CashewQueryable, Codable, Sendable, LosslessStringConver
     func proof(paths: ArrayTrie<SparseMerkleProof>, fetcher: Fetcher) async throws -> Self
     func transform(transforms: ArrayTrie<Transform>) throws -> Self?
     func transform(transforms: ArrayTrie<Transform>, keyProvider: KeyProvider?) throws -> Self?
-    func storeRecursively(storer: Storer) throws
     func removingNode() -> Self
     func encrypt(encryption: ArrayTrie<EncryptionStrategy>) throws -> Self
     func encryptSelf(key: SymmetricKey) throws -> Self
@@ -152,24 +151,14 @@ public extension Header {
 
     func fetchAndDecodeNode(fetcher: Fetcher) async throws -> NodeType {
         let fetchedData = try await fetcher.fetch(rawCid: rawCID)
-        try verifyFetchedData(fetchedData, matches: rawCID)
+        try verifyData(fetchedData, matches: rawCID)
         let decrypted = try decryptIfNeeded(data: fetchedData, fetcher: fetcher)
         guard let node = NodeType(data: decrypted) else { throw CashewDecodingError.decodeFromDataError }
         return node
     }
 
-    func verifyFetchedData(_ data: Data, matches rawCID: String) throws {
-        let expectedCID = try CID(rawCID)
-        guard let hashAlgorithm = expectedCID.multihash.algorithm else {
-            throw DataErrors.cidCreationFailed
-        }
-        let actualMultihash = try Multihash(raw: data, hashedWith: hashAlgorithm)
-        let actualCID = try CID(
-            version: expectedCID.version,
-            codec: expectedCID.codec,
-            multihash: actualMultihash
-        )
-        guard actualCID == expectedCID else { throw DataErrors.cidMismatch }
+    func verifyData(_ data: Data, matches rawCID: String) throws {
+        try verifyContentAddress(data, matches: rawCID)
     }
 
     func reEncryptIfNeeded(node: NodeType, keyProvider: KeyProvider?) throws -> Self {
@@ -199,4 +188,18 @@ public extension Header {
         }
         return try EncryptionHelper.decrypt(data: data, key: key)
     }
+}
+
+func verifyContentAddress(_ data: Data, matches rawCID: String) throws {
+    let expectedCID = try CID(rawCID)
+    guard let hashAlgorithm = expectedCID.multihash.algorithm else {
+        throw DataErrors.cidCreationFailed
+    }
+    let actualMultihash = try Multihash(raw: data, hashedWith: hashAlgorithm)
+    let actualCID = try CID(
+        version: expectedCID.version,
+        codec: expectedCID.codec,
+        multihash: actualMultihash
+    )
+    guard actualCID == expectedCID else { throw DataErrors.cidMismatch }
 }

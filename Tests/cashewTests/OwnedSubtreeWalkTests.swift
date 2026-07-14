@@ -4,6 +4,10 @@ import Foundation
 
 @Suite("Owned-subtree walk")
 struct OwnedSubtreeWalkTests {
+    private struct Leaf: Scalar, Equatable {
+        let value: String
+    }
+
     private func resolvedDict(keyCount: Int) async throws -> VolumeImpl<MerkleDictionaryImpl<String>> {
         let store = CountingStore()
         var dict = MerkleDictionaryImpl<String>()
@@ -11,7 +15,7 @@ struct OwnedSubtreeWalkTests {
             dict = try dict.inserting(key: "key-\(i)", value: "value-\(i)")
         }
         let vol = try VolumeImpl(node: dict)
-        try vol.storeRecursively(storer: store)
+        try await vol.storeRecursively(storer: store)
         return try await VolumeImpl<MerkleDictionaryImpl<String>>(rawCID: vol.rawCID)
             .resolveRecursive(fetcher: store)
     }
@@ -64,5 +68,22 @@ struct OwnedSubtreeWalkTests {
         header.walkOwnedSubtree(visited: &visited) { _, _ in visits += 1 }
         #expect(visits == 0)
         #expect(visited.isEmpty)
+    }
+
+    @Test("walk includes Header-valued radix values")
+    func walksHeaderValuedRadixValues() throws {
+        typealias Dictionary = MerkleDictionaryImpl<VolumeImpl<Leaf>>
+        let value = try VolumeImpl(node: Leaf(value: "payload"))
+        let dictionary = try Dictionary().inserting(key: "item", value: value)
+        let root = try VolumeImpl(node: dictionary)
+        var visited = Set<String>()
+        var edges = [String: [String: Int]]()
+
+        root.walkOwnedSubtree(visited: &visited) { node, childEdges in
+            edges[node] = childEdges
+        }
+
+        #expect(visited.contains(value.rawCID))
+        #expect(edges.values.contains { $0[value.rawCID] == 1 })
     }
 }

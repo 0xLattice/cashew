@@ -940,7 +940,7 @@ struct BulkTransformTests {
 
         let baseDictionaryHeader = try HeaderImpl<BaseDictionary>(node: baseDictionary)
         let fetcher = TestStoreFetcher()
-        try! baseDictionaryHeader.storeRecursively(storer: fetcher)
+        try! await baseDictionaryHeader.storeAsVolume(storer: fetcher)
 
         let higherDictionary: HigherDictionaryType = HigherDictionaryType(children: [:], count: 0)
 

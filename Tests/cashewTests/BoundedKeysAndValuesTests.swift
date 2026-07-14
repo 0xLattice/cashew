@@ -15,12 +15,12 @@ struct BoundedKeysAndValuesTests {
         (0..<10).map { "\(Character(UnicodeScalar(97 + b)!))\($0)" }
     }.sorted()
 
-    private func buildStored() throws -> (cid: String, store: CountingStoreFetcher) {
+    private func buildStored() async throws -> (cid: String, store: CountingStoreFetcher) {
         let store = CountingStoreFetcher()
         var dict = MerkleDictionaryImpl<String>()
         for k in keys { dict = try dict.inserting(key: k, value: "v_\(k)") }
         let vol = try VolumeImpl(node: dict)
-        try vol.storeRecursively(storer: store)
+        try await vol.storeRecursively(storer: store)
         return (vol.rawCID, store)
     }
 
@@ -38,7 +38,7 @@ struct BoundedKeysAndValuesTests {
 
     @Test("matches the sortedKeysAndValues oracle (mid-branch cursor)")
     func matchesOracleMidBranch() async throws {
-        let (cid, store) = try buildStored()
+        let (cid, store) = try await buildStored()
         let root = try await lazyRoot(cid, store)
         let page = try await root.boundedKeysAndValues(after: "c5", limit: 3, fetcher: store)
         let want = try oracle(limit: 3, after: "c5")
@@ -49,7 +49,7 @@ struct BoundedKeysAndValuesTests {
 
     @Test("first page (no cursor) returns the smallest keys")
     func firstPage() async throws {
-        let (cid, store) = try buildStored()
+        let (cid, store) = try await buildStored()
         let root = try await lazyRoot(cid, store)
         let page = try await root.boundedKeysAndValues(after: nil, limit: 4, fetcher: store)
         #expect(page.map(\.key) == ["a0", "a1", "a2", "a3"])
@@ -57,7 +57,7 @@ struct BoundedKeysAndValuesTests {
 
     @Test("cursor at a branch boundary crosses into the next branch")
     func crossesBranchBoundary() async throws {
-        let (cid, store) = try buildStored()
+        let (cid, store) = try await buildStored()
         let root = try await lazyRoot(cid, store)
         // after the last 'a' key → must continue into the 'b' branch.
         let page = try await root.boundedKeysAndValues(after: "a9", limit: 3, fetcher: store)
@@ -66,7 +66,7 @@ struct BoundedKeysAndValuesTests {
 
     @Test("does NOT fetch pre-cursor branches (bounded, not O(all keys))")
     func prunesPreCursorBranches() async throws {
-        let (cid, store) = try buildStored()
+        let (cid, store) = try await buildStored()
         let root = try await lazyRoot(cid, store)
         store.resetFetchCount()
         let page = try await root.boundedKeysAndValues(after: "c5", limit: 3, fetcher: store)
@@ -78,7 +78,7 @@ struct BoundedKeysAndValuesTests {
 
     @Test("full pagination across all branches covers everything in order")
     func fullPaginationInOrder() async throws {
-        let (cid, store) = try buildStored()
+        let (cid, store) = try await buildStored()
         let root = try await lazyRoot(cid, store)
         var collected = [String]()
         var cursor: String? = nil
@@ -93,7 +93,7 @@ struct BoundedKeysAndValuesTests {
 
     @Test("cursor past the end returns empty")
     func pastEnd() async throws {
-        let (cid, store) = try buildStored()
+        let (cid, store) = try await buildStored()
         let root = try await lazyRoot(cid, store)
         let page = try await root.boundedKeysAndValues(after: "zzz", limit: 5, fetcher: store)
         #expect(page.isEmpty)

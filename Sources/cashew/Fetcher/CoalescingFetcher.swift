@@ -9,8 +9,7 @@ import Crypto
 /// concurrently (`resolveChildrenConcurrently` / the `withThrowingTaskGroup` in
 /// `Node.resolve`). Each of those concurrent tasks calls `fetch(rawCid)` at
 /// nearly the same instant — one "wave". Sending each on its own network trip is
-/// the per-node round-trip problem (and the reason the `enterVolume` bulk-load
-/// hack was bolted on). Instead we buffer a wave's CIDs and flush them as one
+/// the per-node round-trip problem. Instead we buffer a wave's CIDs and flush them as one
 /// `ContentSource.fetch(Set)`: same proven resolution walk, one round-trip per
 /// level, and no Header-vs-Volume special-casing.
 ///

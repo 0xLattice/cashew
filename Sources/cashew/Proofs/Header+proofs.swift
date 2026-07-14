@@ -27,6 +27,5 @@ public extension Header {
     }
 }
 
-// A Volume proves exactly like any other Header (`Header.proof` above). The
-// former VolumeAwareFetcher `enterVolume` bulk-prefetch hint has been removed,
-// so no Volume-specific proof override is needed.
+// A Volume proves exactly like any other Header (`Header.proof` above), so no
+// Volume-specific proof override is needed.

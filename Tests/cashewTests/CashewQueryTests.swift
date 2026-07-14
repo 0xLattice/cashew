@@ -592,7 +592,7 @@ struct CashewQueryTests {
 
             let store = TestStoreFetcher()
             let header = try HeaderImpl(node: dict)
-            try header.storeRecursively(storer: store)
+            try await header.storeAsVolume(storer: store)
 
             let unresolved = HeaderImpl<Dict>(rawCID: header.rawCID)
             let resolvedHeader = try await unresolved.resolveRecursive(fetcher: store)
@@ -609,7 +609,7 @@ struct CashewQueryTests {
 
             let store = TestStoreFetcher()
             let header = try HeaderImpl(node: dict)
-            try header.storeRecursively(storer: store)
+            try await header.storeAsVolume(storer: store)
 
             let resolved = try await HeaderImpl<Dict>(rawCID: header.rawCID)
                 .resolveRecursive(fetcher: store).node!
@@ -947,7 +947,7 @@ struct CashewQueryTests {
             )
             let store = TestStoreFetcher()
             let header = try HeaderImpl(node: dict)
-            try header.storeRecursively(storer: store)
+            try await header.storeAsVolume(storer: store)
 
             let resolved = try await HeaderImpl<Dict>(rawCID: header.rawCID)
                 .resolveRecursive(fetcher: store).node!
@@ -965,14 +965,14 @@ struct CashewQueryTests {
 
             let (d1, _) = try Dict().query(#"insert "a" = "1" | insert "b" = "2""#)
             let h1 = try HeaderImpl(node: d1)
-            try h1.storeRecursively(storer: store)
+            try await h1.storeAsVolume(storer: store)
 
             let r1 = try await HeaderImpl<Dict>(rawCID: h1.rawCID)
                 .resolveRecursive(fetcher: store).node!
             let (d2, _) = try r1.query(#"insert "c" = "3" | delete "a""#)
 
             let h2 = try HeaderImpl(node: d2)
-            try h2.storeRecursively(storer: store)
+            try await h2.storeAsVolume(storer: store)
 
             let r2 = try await HeaderImpl<Dict>(rawCID: h2.rawCID)
                 .resolveRecursive(fetcher: store).node!
@@ -1077,7 +1077,7 @@ struct QueryAllTypesTests {
                 .inserting(key: "beta", value: "second")
             let header = try HeaderImpl(node: dict)
             let store = TestStoreFetcher()
-            try header.storeRecursively(storer: store)
+            try await header.storeAsVolume(storer: store)
 
             let unresolved = HeaderImpl<Dict>(rawCID: header.rawCID)
             let (resolved, result) = try await unresolved.query(#"get "alpha""#, fetcher: store)
@@ -1130,7 +1130,7 @@ struct QueryAllTypesTests {
             let arr = try Arr().append("p").append("q").append("r")
             let header = try HeaderImpl(node: arr)
             let store = TestStoreFetcher()
-            try header.storeRecursively(storer: store)
+            try await header.storeAsVolume(storer: store)
 
             let unresolved = HeaderImpl<Arr>(rawCID: header.rawCID)
             let (_, result) = try await unresolved.query("get at 2", fetcher: store)
@@ -1336,7 +1336,7 @@ struct QueryAllTypesTests {
 
             let store = TestStoreFetcher()
             let header = try HeaderImpl(node: outer)
-            try header.storeRecursively(storer: store)
+            try await header.storeAsVolume(storer: store)
 
             let resolved = try await HeaderImpl<DictOfDicts>(rawCID: header.rawCID)
                 .resolveRecursive(fetcher: store)
@@ -1357,7 +1357,7 @@ struct QueryAllTypesTests {
             let arr = try Arr().append("first").append("second").append("third")
             let store = TestStoreFetcher()
             let header = try HeaderImpl(node: arr)
-            try header.storeRecursively(storer: store)
+            try await header.storeAsVolume(storer: store)
 
             let unresolved = HeaderImpl<Arr>(rawCID: header.rawCID)
             let (_, result) = try await unresolved.query("get at 1", fetcher: store)
@@ -1369,7 +1369,7 @@ struct QueryAllTypesTests {
             let set = try MerkleSetImpl().insert("red").insert("green").insert("blue")
             let store = TestStoreFetcher()
             let header = try HeaderImpl(node: set)
-            try header.storeRecursively(storer: store)
+            try await header.storeAsVolume(storer: store)
 
             let unresolved = HeaderImpl<MerkleSetImpl>(rawCID: header.rawCID)
             let (_, result) = try await unresolved.query("keys sorted", fetcher: store)
@@ -1393,7 +1393,7 @@ struct QueryAllTypesTests {
 
             let store = TestStoreFetcher()
             let header = try HeaderImpl(node: arr)
-            try header.storeRecursively(storer: store)
+            try await header.storeAsVolume(storer: store)
 
             let resolved = try await HeaderImpl<ArrOfDicts>(rawCID: header.rawCID)
                 .resolveRecursive(fetcher: store)
@@ -1413,11 +1413,11 @@ struct QueryAllTypesTests {
                 .inserting(key: "b", value: "2")
             let store = TestStoreFetcher()
             let h1 = try HeaderImpl(node: dict)
-            try h1.storeRecursively(storer: store)
+            try await h1.storeAsVolume(storer: store)
 
             let (updated, _) = try await HeaderImpl<InnerDict>(rawCID: h1.rawCID)
                 .query(#"insert "c" = "3" | delete "a""#, fetcher: store)
-            try updated.storeRecursively(storer: store)
+            try await updated.storeAsVolume(storer: store)
 
             let reloaded = try await HeaderImpl<InnerDict>(rawCID: updated.rawCID)
                 .resolveRecursive(fetcher: store)
@@ -1436,8 +1436,8 @@ struct QueryAllTypesTests {
 
             let store = TestStoreFetcher()
             let h = try HeaderImpl(node: outer)
-            try h.storeRecursively(storer: store)
-            try HeaderImpl(node: inner3).storeRecursively(storer: store)
+            try await h.storeAsVolume(storer: store)
+            try await HeaderImpl(node: inner3).storeAsVolume(storer: store)
 
             let resolved = try await HeaderImpl<DictOfDicts>(rawCID: h.rawCID)
                 .resolveRecursive(fetcher: store)

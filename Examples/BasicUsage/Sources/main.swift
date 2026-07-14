@@ -2,10 +2,15 @@ import cashew
 import ArrayTrie
 import Foundation
 
-// A simple in-memory store that implements both Storer and Fetcher.
-final class MemoryStore: Storer, Fetcher, @unchecked Sendable {
+// A simple in-memory store for sparse blocks, complete Volumes, and reads.
+final class MemoryStore: Storer, VolumeStorer, Fetcher, @unchecked Sendable {
     private var storage: [String: Data] = [:]
-    func store(rawCid: String, data: Data) { storage[rawCid] = data }
+    func store(entries: [String: Data]) async {
+        storage.merge(entries) { _, new in new }
+    }
+    func store(volume: SerializedVolume) async {
+        storage.merge(volume.entries) { _, new in new }
+    }
     func fetch(rawCid: String) async throws -> Data {
         guard let data = storage[rawCid] else {
             fatalError("CID not found: \(rawCid)")
@@ -33,31 +38,31 @@ struct Example {
         dict = try dict.inserting(key: "bob", value: HeaderImpl(node: UserScore(score: 85)))
         dict = try dict.inserting(key: "charlie", value: HeaderImpl(node: UserScore(score: 92)))
 
-        let header = HeaderImpl(node: dict)
-        print("Root CID: \(header.rawCID)")
+        let volume = try VolumeImpl(node: dict)
+        print("Root CID: \(volume.rawCID)")
         print("Count: \(dict.count)")
 
         // 2. Store everything
-        try header.storeRecursively(storer: store)
+        try await volume.store(storer: store)
         print("Stored to memory.")
 
         // 3. Resolve from just the CID (simulates loading from remote storage)
-        let cidOnly = HeaderImpl<ScoreDict>(rawCID: header.rawCID)
+        let cidOnly = VolumeImpl<ScoreDict>(rawCID: volume.rawCID)
         let resolved = try await cidOnly.resolveRecursive(fetcher: store)
         let alice = try resolved.node!.get(key: "alice")!
         print("Alice's score: \(alice.node!.score)")
 
         // 4. Transform: update alice, delete bob, insert dave
         var transforms = ArrayTrie<Transform>()
-        transforms.set(["alice"], value: .update(HeaderImpl(node: UserScore(score: 110)).description))
+        transforms.set(["alice"], value: .update(try HeaderImpl(node: UserScore(score: 110)).description))
         transforms.set(["bob"], value: .delete)
-        transforms.set(["dave"], value: .insert(HeaderImpl(node: UserScore(score: 77)).description))
+        transforms.set(["dave"], value: .insert(try HeaderImpl(node: UserScore(score: 77)).description))
 
         let transformed = try resolved.node!.transform(transforms: transforms)!
-        let newHeader = HeaderImpl(node: transformed)
+        let newHeader = try HeaderImpl(node: transformed)
         print("\nAfter transform:")
         print("New root CID: \(newHeader.rawCID)")
-        print("CID changed: \(newHeader.rawCID != header.rawCID)")
+        print("CID changed: \(newHeader.rawCID != volume.rawCID)")
         print("Count: \(transformed.count)")
 
         // 5. Verify content addressability: same data = same CID
@@ -65,7 +70,7 @@ struct Example {
         rebuilt = try rebuilt.inserting(key: "alice", value: HeaderImpl(node: UserScore(score: 110)))
         rebuilt = try rebuilt.inserting(key: "charlie", value: HeaderImpl(node: UserScore(score: 92)))
         rebuilt = try rebuilt.inserting(key: "dave", value: HeaderImpl(node: UserScore(score: 77)))
-        let rebuiltHeader = HeaderImpl(node: rebuilt)
+        let rebuiltHeader = try HeaderImpl(node: rebuilt)
         print("Rebuilt from scratch CID matches: \(rebuiltHeader.rawCID == newHeader.rawCID)")
     }
 }

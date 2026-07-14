@@ -85,7 +85,7 @@ struct UserProfileStoreTests {
 
         let header = try HeaderImpl(node: store)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<UserStore>(rawCID: header.rawCID)
             .resolveRecursive(fetcher: fetcher)
@@ -126,9 +126,9 @@ struct VersionedConfigTests {
         #expect(v2Header.rawCID != v3Header.rawCID)
 
         let fetcher = TestStoreFetcher()
-        try v1Header.storeRecursively(storer: fetcher)
-        try v2Header.storeRecursively(storer: fetcher)
-        try v3Header.storeRecursively(storer: fetcher)
+        try await v1Header.storeAsVolume(storer: fetcher)
+        try await v2Header.storeAsVolume(storer: fetcher)
+        try await v3Header.storeAsVolume(storer: fetcher)
 
         let rolledBack = try await HeaderImpl<Config>(rawCID: v1Header.rawCID)
             .resolveRecursive(fetcher: fetcher)
@@ -239,7 +239,7 @@ struct SelectiveEncryptionTests {
         encryption.set(["secret_score"], value: .targeted(patientKey))
         let encrypted = try header.encrypt(encryption: encryption)
 
-        try encrypted.storeRecursively(storer: fetcher)
+        try await encrypted.storeAsVolume(storer: fetcher)
 
         let resolved = try await encrypted.removingNode().resolveRecursive(fetcher: fetcher)
         let publicVal = try resolved.node!.get(key: "public_id")!
@@ -265,7 +265,7 @@ struct SelectiveEncryptionTests {
         var encryption = ArrayTrie<EncryptionStrategy>()
         encryption.set(["secret_score"], value: .targeted(patientKey))
         let encrypted = try header.encrypt(encryption: encryption)
-        try encrypted.storeRecursively(storer: authorizedFetcher)
+        try await encrypted.storeAsVolume(storer: authorizedFetcher)
 
         let unauthorizedFetcher = TestStoreFetcher()
         let encryptedSecretVal = try encrypted.node!.get(key: "secret_score")!
@@ -346,7 +346,7 @@ struct LazyCatalogTests {
     func testListResolution() async throws {
         let (_, catalogHeader) = try buildCatalog()
         let fetcher = TestStoreFetcher()
-        try catalogHeader.storeRecursively(storer: fetcher)
+        try await catalogHeader.storeAsVolume(storer: fetcher)
 
         var paths = ArrayTrie<ResolutionStrategy>()
         paths.set([""], value: .list)
@@ -365,7 +365,7 @@ struct LazyCatalogTests {
     func testTargetedResolution() async throws {
         let (_, catalogHeader) = try buildCatalog()
         let fetcher = TestStoreFetcher()
-        try catalogHeader.storeRecursively(storer: fetcher)
+        try await catalogHeader.storeAsVolume(storer: fetcher)
 
         var paths = ArrayTrie<ResolutionStrategy>()
         paths.set(["electronics"], value: .targeted)
@@ -383,7 +383,7 @@ struct LazyCatalogTests {
     func testRecursiveResolution() async throws {
         let (_, catalogHeader) = try buildCatalog()
         let fetcher = TestStoreFetcher()
-        try catalogHeader.storeRecursively(storer: fetcher)
+        try await catalogHeader.storeAsVolume(storer: fetcher)
 
         var paths = ArrayTrie<ResolutionStrategy>()
         paths.set(["electronics"], value: .recursive)
@@ -410,7 +410,7 @@ struct LazyCatalogTests {
     func testIncrementalResolution() async throws {
         let (_, catalogHeader) = try buildCatalog()
         let fetcher = TestStoreFetcher()
-        try catalogHeader.storeRecursively(storer: fetcher)
+        try await catalogHeader.storeAsVolume(storer: fetcher)
 
         var listPaths = ArrayTrie<ResolutionStrategy>()
         listPaths.set([""], value: .list)
@@ -476,8 +476,8 @@ struct EventLogTests {
         let v2Header = try HeaderImpl(node: v2)
 
         let fetcher = TestStoreFetcher()
-        try v1Header.storeRecursively(storer: fetcher)
-        try v2Header.storeRecursively(storer: fetcher)
+        try await v1Header.storeAsVolume(storer: fetcher)
+        try await v2Header.storeAsVolume(storer: fetcher)
 
         let resolvedV1 = try await HeaderImpl<EventLog>(rawCID: v1Header.rawCID)
             .resolveRecursive(fetcher: fetcher)
@@ -495,7 +495,7 @@ struct EventLogTests {
         let log = try buildLog(count: 100)
         let header = try HeaderImpl(node: log)
         let fetcher = CountingStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<EventLog>(rawCID: header.rawCID)
             .resolve(fetcher: fetcher)
@@ -543,7 +543,7 @@ struct EventLogTests {
         let log = try buildLog(count: 25)
         let header = try HeaderImpl(node: log)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<EventLog>(rawCID: header.rawCID)
             .resolveRecursive(fetcher: fetcher)
@@ -574,11 +574,11 @@ struct TimeSeriesTests {
                 readings = try readings.append("s\(sensor)_t\(t)_val=\(sensor * 100 + t)")
             }
             let readingsHeader = try HeaderImpl(node: readings)
-            try readingsHeader.storeRecursively(storer: fetcher)
+            try await readingsHeader.storeAsVolume(storer: fetcher)
             sensorLog = try sensorLog.append(readingsHeader)
         }
         let header = try HeaderImpl(node: sensorLog)
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<SensorLog>(rawCID: header.rawCID)
             .resolve(fetcher: fetcher)
@@ -679,7 +679,7 @@ struct ChatHistoryTests {
 
         let header = try HeaderImpl(node: store)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<ChannelStore>(rawCID: header.rawCID)
             .resolveRecursive(fetcher: fetcher)
@@ -702,7 +702,7 @@ struct ChatHistoryTests {
 
         let header = try HeaderImpl(node: messages)
         let fetcher = CountingStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<MessageLog>(rawCID: header.rawCID)
             .resolve(fetcher: fetcher)
@@ -764,7 +764,7 @@ struct AuditTrailTests {
         ledger = try ledger.inserting(key: "delta_tx", value: "400")
         let header = try HeaderImpl(node: ledger)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let cidOnly = HeaderImpl<Ledger>(rawCID: header.rawCID)
         var proofPaths = ArrayTrie<SparseMerkleProof>()
@@ -790,7 +790,7 @@ struct AuditTrailTests {
         let ledger = try buildLedger(count: 5)
         let header = try HeaderImpl(node: ledger)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         var proofPaths = ArrayTrie<SparseMerkleProof>()
         proofPaths.set(["tx999"], value: .insertion)
@@ -803,14 +803,14 @@ struct AuditTrailTests {
         let v1 = try buildLedger(count: 10)
         let v1Header = try HeaderImpl(node: v1)
         let fetcher = TestStoreFetcher()
-        try v1Header.storeRecursively(storer: fetcher)
+        try await v1Header.storeAsVolume(storer: fetcher)
 
         var transforms = ArrayTrie<Transform>()
         transforms.set(["tx011"], value: .insert("1100"))
         transforms.set(["tx012"], value: .insert("1200"))
         let v2 = try v1.transform(transforms: transforms)!
         let v2Header = try HeaderImpl(node: v2)
-        try v2Header.storeRecursively(storer: fetcher)
+        try await v2Header.storeAsVolume(storer: fetcher)
 
         #expect(v1Header.rawCID != v2Header.rawCID)
 
@@ -829,7 +829,7 @@ struct AuditTrailTests {
         let ledger = try buildLedger(count: 5)
         let header = try HeaderImpl(node: ledger)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         var proofPaths = ArrayTrie<SparseMerkleProof>()
         proofPaths.set(["tx003"], value: .deletion)
@@ -844,7 +844,7 @@ struct AuditTrailTests {
         let ledger = try buildLedger(count: 20)
         let header = try HeaderImpl(node: ledger)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         var proofPaths = ArrayTrie<SparseMerkleProof>()
         proofPaths.set(["tx010"], value: .existence)
@@ -901,20 +901,20 @@ struct TokenLedgerQueryTests {
             .inserting(key: "carol", value: "200")
 
         let v1 = try HeaderImpl(node: balances)
-        try v1.storeRecursively(storer: store)
+        try await v1.storeAsVolume(storer: store)
 
         let (b2, _) = try balances.query(
             #"update "alice" = "70" | update "bob" = "80""#
         )
         balances = b2
         let v2 = try HeaderImpl(node: balances)
-        try v2.storeRecursively(storer: store)
+        try await v2.storeAsVolume(storer: store)
 
         let (b3, _) = try balances.query(
             #"update "bob" = "30" | update "carol" = "250""#
         )
         let v3 = try HeaderImpl(node: b3)
-        try v3.storeRecursively(storer: store)
+        try await v3.storeAsVolume(storer: store)
 
         #expect(v1.rawCID != v2.rawCID)
         #expect(v2.rawCID != v3.rawCID)
@@ -1007,15 +1007,15 @@ struct AccessControlQueryTests {
 
         let v1 = try Permissions().insert("read")
         let h1 = try HeaderImpl(node: v1)
-        try h1.storeRecursively(storer: store)
+        try await h1.storeAsVolume(storer: store)
 
         let (v2, _) = try v1.query(#"insert "write" = """#)
         let h2 = try HeaderImpl(node: v2)
-        try h2.storeRecursively(storer: store)
+        try await h2.storeAsVolume(storer: store)
 
         let (v3, _) = try v2.query(#"delete "read""#)
         let h3 = try HeaderImpl(node: v3)
-        try h3.storeRecursively(storer: store)
+        try await h3.storeAsVolume(storer: store)
 
         #expect(Set([h1.rawCID, h2.rawCID, h3.rawCID]).count == 3)
 
@@ -1044,7 +1044,7 @@ struct AccessControlQueryTests {
             .inserting(key: "engineering", value: try HeaderImpl(node: engineering))
 
         let header = try HeaderImpl(node: roles)
-        try header.storeRecursively(storer: store)
+        try await header.storeAsVolume(storer: store)
 
         let resolved = try await HeaderImpl<RoleStore>(rawCID: header.rawCID)
             .resolveRecursive(fetcher: store)
@@ -1067,7 +1067,7 @@ struct PackageRegistryQueryTests {
 
     typealias PackageMeta = MerkleDictionaryImpl<String>
     typealias VersionLog = MerkleArrayImpl<String>
-    typealias Registry = MerkleDictionaryImpl<HeaderImpl<PackageMeta>>
+    typealias Registry = MerkleDictionaryImpl<VolumeImpl<PackageMeta>>
 
     @Test("Publish packages, query registry, update metadata via queries")
     func testPublishAndQuery() throws {
@@ -1084,8 +1084,8 @@ struct PackageRegistryQueryTests {
             .inserting(key: "downloads", value: "1500")
 
         var registry = try Registry()
-            .inserting(key: "cashew", value: try HeaderImpl(node: cashew))
-            .inserting(key: "arraytrie", value: try HeaderImpl(node: arraytrie))
+            .inserting(key: "cashew", value: try VolumeImpl(node: cashew))
+            .inserting(key: "arraytrie", value: try VolumeImpl(node: arraytrie))
 
         let (_, packages) = try registry.query("keys sorted")
         #expect(packages == .list(["arraytrie", "cashew"]))
@@ -1115,7 +1115,7 @@ struct PackageRegistryQueryTests {
         }
 
         let header = try HeaderImpl(node: versions)
-        try header.storeRecursively(storer: store)
+        try await header.storeAsVolume(storer: store)
 
         let resolved = try await HeaderImpl<VersionLog>(rawCID: header.rawCID)
             .query("count", fetcher: store)
@@ -1155,25 +1155,34 @@ struct PackageRegistryQueryTests {
             .inserting(key: "version", value: "3.0.0")
             .inserting(key: "author", value: "perfect")
 
+        let pkgAVolume = try VolumeImpl(node: pkgA)
+        let pkgBVolume = try VolumeImpl(node: pkgB)
+        let pkgCVolume = try VolumeImpl(node: pkgC)
         let registry = try Registry()
-            .inserting(key: "swift-nio", value: try HeaderImpl(node: pkgA))
-            .inserting(key: "vapor", value: try HeaderImpl(node: pkgB))
-            .inserting(key: "perfect", value: try HeaderImpl(node: pkgC))
+            .inserting(key: "swift-nio", value: pkgAVolume)
+            .inserting(key: "vapor", value: pkgBVolume)
+            .inserting(key: "perfect", value: pkgCVolume)
+
+        try await pkgAVolume.store(storer: store)
+        try await pkgBVolume.store(storer: store)
+        try await pkgCVolume.store(storer: store)
 
         let regHeader = try HeaderImpl(node: registry)
-        try regHeader.storeRecursively(storer: store)
+        try await regHeader.storeAsVolume(storer: store)
 
-        let (resolved, hasPkg) = try await HeaderImpl<Registry>(rawCID: regHeader.rawCID)
-            .query(#"contains "vapor""#, fetcher: store)
+        let resolved = try await HeaderImpl<Registry>(rawCID: regHeader.rawCID)
+            .resolveRecursive(fetcher: store)
+        let (_, hasPkg) = try resolved.query(#"contains "vapor""#)
         #expect(hasPkg == .bool(true))
 
         let vaporHeader = try resolved.node!.get(key: "vapor")!
         let (updatedVapor, _) = try await vaporHeader
             .query(#"update "version" = "4.1.0""#, fetcher: store)
+        try await updatedVapor.store(storer: store)
 
         let updatedRegistry = try resolved.node!.mutating(key: "vapor", value: updatedVapor)
         let newRegHeader = try HeaderImpl(node: updatedRegistry)
-        try newRegHeader.storeRecursively(storer: store)
+        try await newRegHeader.storeAsVolume(storer: store)
 
         let (_, vaporVersion) = try await HeaderImpl<Registry>(rawCID: newRegHeader.rawCID)
             .resolveRecursive(fetcher: store).node!
@@ -1255,7 +1264,7 @@ struct SupplyChainQueryTests {
             .inserting(key: "gadget_z50", value: try HeaderImpl(node: gadget))
 
         let header = try HeaderImpl(node: tracker)
-        try header.storeRecursively(storer: store)
+        try await header.storeAsVolume(storer: store)
 
         let (resolved, productCount) = try await HeaderImpl<ProductTracker>(rawCID: header.rawCID)
             .query("count", fetcher: store)
@@ -1317,7 +1326,7 @@ struct DocumentVersioningQueryTests {
             .inserting(key: "README.md", value: try HeaderImpl(node: readme))
             .inserting(key: "config.yml", value: try HeaderImpl(node: config))
         let commit1 = try HeaderImpl(node: tree)
-        try commit1.storeRecursively(storer: store)
+        try await commit1.storeAsVolume(storer: store)
 
         let (resolved1, _) = try await commit1.query("keys sorted", fetcher: store)
         let readmeHeader = try resolved1.node!.get(key: "README.md")!
@@ -1327,7 +1336,7 @@ struct DocumentVersioningQueryTests {
         )
         let tree2 = try resolved1.node!.mutating(key: "README.md", value: updatedReadme)
         let commit2 = try HeaderImpl(node: tree2)
-        try commit2.storeRecursively(storer: store)
+        try await commit2.storeAsVolume(storer: store)
 
         let configCID1 = try tree.get(key: "config.yml")!.rawCID
         let configCID2 = try tree2.get(key: "config.yml")!.rawCID
@@ -1530,7 +1539,7 @@ struct NFTMarketplaceQueryTests {
             .inserting(key: "founders", value: try HeaderImpl(node: collection))
 
         let root = try HeaderImpl(node: marketplace)
-        try root.storeRecursively(storer: store)
+        try await root.storeAsVolume(storer: store)
 
         let (resolved, hasFounders) = try await HeaderImpl<Marketplace>(rawCID: root.rawCID)
             .query(#"contains "founders""#, fetcher: store)
@@ -1632,7 +1641,7 @@ struct IoTSensorQueryTests {
             .inserting(key: "sensor_1", value: try HeaderImpl(node: series))
 
         let root = try HeaderImpl(node: registry)
-        try root.storeRecursively(storer: store)
+        try await root.storeAsVolume(storer: store)
 
         let (resolved, count) = try await HeaderImpl<DeviceRegistry>(rawCID: root.rawCID)
             .query("count", fetcher: store)
@@ -1747,7 +1756,7 @@ struct BondPortfolioQueryTests {
             .inserting(key: "sovereign_fund", value: try HeaderImpl(node: holdings))
 
         let root = try HeaderImpl(node: book)
-        try root.storeRecursively(storer: store)
+        try await root.storeAsVolume(storer: store)
 
         let (resolved, hasFund) = try await HeaderImpl<AccountBook>(rawCID: root.rawCID)
             .query(#"contains "sovereign_fund""#, fetcher: store)
@@ -2083,7 +2092,7 @@ struct OrgChartQueryTests {
             .inserting(key: "leadership", value: try HeaderImpl(node: unit))
 
         let root = try HeaderImpl(node: org)
-        try root.storeRecursively(storer: store)
+        try await root.storeAsVolume(storer: store)
 
         let (resolved, hasLeadership) = try await HeaderImpl<OrgRegistry>(rawCID: root.rawCID)
             .query(#"contains "leadership""#, fetcher: store)

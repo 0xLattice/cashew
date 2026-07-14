@@ -50,7 +50,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             let emptyPaths = ArrayTrie<SparseMerkleProof>()
             let result = try await header.proof(paths: emptyPaths, fetcher: fetcher)
@@ -67,7 +67,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["existing-prop"], value: .existence)
@@ -86,7 +86,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["mutable-prop"], value: .mutation)
@@ -107,7 +107,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["non-existing-prop"], value: .existence)
@@ -131,7 +131,7 @@ struct ProofTests {
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
 
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["b", "branch"], value: .existence)
@@ -172,7 +172,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             let paths = [["k", "key1"]: SparseMerkleProof.existence]
             let result = try await header.proof(paths: paths, fetcher: fetcher)
@@ -228,7 +228,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: originalCID)
             let fetcher = TestStoreFetcher()
-            try originalHeader.storeRecursively(storer: fetcher)
+            try await originalHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["t", "test-prop"], value: .existence)
@@ -247,7 +247,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["deletable"], value: .deletion)
@@ -268,7 +268,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["insertable"], value: .insertion)
@@ -292,7 +292,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["existing"], value: .existence)
@@ -320,7 +320,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             let emptyPaths = ArrayTrie<SparseMerkleProof>()
             let result = try await header.proof(paths: emptyPaths, fetcher: fetcher)
@@ -338,7 +338,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["parentchild"], value: .existence)
@@ -357,7 +357,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["mutable-prop"], value: .mutation)
@@ -379,7 +379,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["test"], value: .mutation)
@@ -399,7 +399,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["new-key"], value: .insertion)
@@ -421,7 +421,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["test"], value: .insertion)
@@ -441,7 +441,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["t", "test"], value: .mutation)
@@ -461,7 +461,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["parentchild"], value: .existence)
@@ -480,7 +480,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["deletable"], value: .deletion)
@@ -548,7 +548,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: originalCID)
             let fetcher = TestStoreFetcher()
-            try originalHeader.storeRecursively(storer: fetcher)
+            try await originalHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["content"], value: .existence)
@@ -569,7 +569,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
             let fetcher = TestStoreFetcher()
-            try headerWithNode.storeRecursively(storer: fetcher)
+            try await headerWithNode.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["existing-key"], value: .existence)
@@ -616,7 +616,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["test"], value: .deletion)
@@ -651,7 +651,7 @@ struct ProofTests {
             let higherDictionaryHeader = try HeaderImpl<HigherDictionaryType>(node: higherDictionary)
 
             let fetcher = TestStoreFetcher()
-            try! higherDictionaryHeader.storeRecursively(storer: fetcher)
+            try! await higherDictionaryHeader.storeAsVolume(storer: fetcher)
 
             let emptyHigherDictionaryHeader = HeaderImpl<HigherDictionaryType>(rawCID: higherDictionaryHeader.rawCID)
 
@@ -678,7 +678,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["n", "non-existing-key"], value: .deletion)
@@ -697,7 +697,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["common-suffix1"], value: .deletion)
@@ -715,7 +715,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["test"], value: .insertion)
@@ -737,7 +737,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["existing-key"], value: .insertion)
@@ -755,7 +755,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["existing"], value: .mutation)
@@ -776,7 +776,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["c", "commondifferent"], value: .insertion)
@@ -795,7 +795,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["mutable-key"], value: .mutation)
@@ -819,7 +819,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["non-existing"], value: .mutation)
@@ -837,7 +837,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["deep-nested-key"], value: .mutation)
@@ -856,7 +856,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["existing-key"], value: .existence)
@@ -889,7 +889,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["k", "key1"], value: .existence)
@@ -912,7 +912,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: dictHeader.rawCID)
             let fetcher = TestStoreFetcher()
-            try dictHeader.storeRecursively(storer: fetcher)
+            try await dictHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["existing"], value: .existence)
@@ -958,7 +958,7 @@ struct ProofTests {
 
             let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: originalCID)
             let fetcher = TestStoreFetcher()
-            try originalHeader.storeRecursively(storer: fetcher)
+            try await originalHeader.storeAsVolume(storer: fetcher)
 
             var paths = ArrayTrie<SparseMerkleProof>()
             paths.set(["c", "content-test"], value: .existence)
@@ -987,7 +987,7 @@ struct ProofTests {
 
             let outerH = try HeaderImpl(node: outer)
             let fetcher = TestStoreFetcher()
-            try outerH.storeRecursively(storer: fetcher)
+            try await outerH.storeAsVolume(storer: fetcher)
 
             let unresolved = HeaderImpl<Outer>(rawCID: outerH.rawCID)
             var paths = ArrayTrie<SparseMerkleProof>()
@@ -1008,7 +1008,7 @@ struct ProofTests {
 
             let header = try HeaderImpl(node: dict)
             let fetcher = TestStoreFetcher()
-            try header.storeRecursively(storer: fetcher)
+            try await header.storeAsVolume(storer: fetcher)
 
             let unresolved = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: header.rawCID)
             var paths = ArrayTrie<SparseMerkleProof>()
@@ -1032,7 +1032,7 @@ struct ProofTests {
 
             let header = try HeaderImpl(node: dict)
             let fetcher = TestStoreFetcher()
-            try header.storeRecursively(storer: fetcher)
+            try await header.storeAsVolume(storer: fetcher)
 
             let unresolved = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: header.rawCID)
             var paths = ArrayTrie<SparseMerkleProof>()

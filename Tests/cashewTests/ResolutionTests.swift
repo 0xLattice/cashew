@@ -74,9 +74,9 @@ struct DictionaryNode: Node {
 
     func get(property: PathSegment) -> (any Header)? {
         if let cid = entries[property] {
-            return HeaderImpl<DictionaryNode>(rawCID: cid)
+            return VolumeImpl<DictionaryNode>(rawCID: cid)
         }
-        return HeaderImpl<DictionaryNode>(rawCID: "missing-entry-\(property)")
+        return VolumeImpl<DictionaryNode>(rawCID: "missing-entry-\(property)")
     }
 
     func properties() -> Set<PathSegment> {
@@ -86,9 +86,7 @@ struct DictionaryNode: Node {
     func set(properties: [PathSegment: any Header]) -> Self {
         var newEntries = entries
         for (property, address) in properties {
-            if let header = address as? HeaderImpl<DictionaryNode> {
-                newEntries[property] = header.rawCID
-            }
+            newEntries[property] = address.rawCID
         }
         return DictionaryNode(id: id, entries: newEntries)
     }
@@ -195,7 +193,7 @@ struct BasicResolutionTests {
         let childHeader = try HeaderImpl(node: child)
         let node = DictionaryNode(id: "node-resolve-test", entries: ["child1": childHeader.rawCID])
         let fetcher = TestStoreFetcher()
-        try childHeader.storeRecursively(storer: fetcher)
+        try await childHeader.storeAsVolume(storer: fetcher)
 
         var paths = ArrayTrie<ResolutionStrategy>()
         paths.set(["child1"], value: .targeted)
@@ -217,8 +215,8 @@ struct BasicResolutionTests {
             entries: ["child1": childHeader1.rawCID, "child2": childHeader2.rawCID]
         )
         let fetcher = TestStoreFetcher()
-        try childHeader1.storeRecursively(storer: fetcher)
-        try childHeader2.storeRecursively(storer: fetcher)
+        try await childHeader1.storeAsVolume(storer: fetcher)
+        try await childHeader2.storeAsVolume(storer: fetcher)
 
         let resolvedNode = try await node.resolveRecursive(fetcher: fetcher)
 
@@ -257,7 +255,7 @@ struct ResolutionStrategiesTests {
 
         let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
         let fetcher = TestStoreFetcher()
-        try headerWithNode.storeRecursively(storer: fetcher)
+        try await headerWithNode.storeAsVolume(storer: fetcher)
 
         var paths = ArrayTrie<ResolutionStrategy>()
         paths.set(["fetched"], value: .targeted)
@@ -292,7 +290,7 @@ struct ResolutionStrategiesTests {
 
         let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
         let fetcher = TestStoreFetcher()
-        try headerWithNode.storeRecursively(storer: fetcher)
+        try await headerWithNode.storeAsVolume(storer: fetcher)
 
         let resolvedHeader = try await header.resolveRecursive(fetcher: fetcher)
 
@@ -308,7 +306,7 @@ struct ResolutionStrategiesTests {
 
         let header = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: headerWithNode.rawCID)
         let fetcher = TestStoreFetcher()
-        try headerWithNode.storeRecursively(storer: fetcher)
+        try await headerWithNode.storeAsVolume(storer: fetcher)
 
         var paths = ArrayTrie<ResolutionStrategy>()
         paths.set(["basic"], value: .targeted)
@@ -374,7 +372,7 @@ struct ResolutionStrategiesTests {
         let originalCID = originalHeader.rawCID
 
         let fetcher = TestStoreFetcher()
-        try originalHeader.storeRecursively(storer: fetcher)
+        try await originalHeader.storeAsVolume(storer: fetcher)
 
         let cidOnlyHeader = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: originalCID)
 
@@ -428,7 +426,7 @@ struct ResolutionStrategiesTests {
         let cid = header.rawCID
 
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let cidHeader1 = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: cid)
         let cidHeader2 = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: cid)
@@ -644,7 +642,7 @@ struct ResolutionStrategiesTests {
 
         let header = try HeaderImpl(node: leafNode)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let cidOnlyHeader = HeaderImpl<RadixNodeImpl<String>>(rawCID: header.rawCID)
 
@@ -674,7 +672,7 @@ struct ResolutionStrategiesTests {
 
         let originalHeader = try HeaderImpl(node: simpleNode)
         let fetcher = TestStoreFetcher()
-        try originalHeader.storeRecursively(storer: fetcher)
+        try await originalHeader.storeAsVolume(storer: fetcher)
 
         let cidOnlyHeader = HeaderImpl<RadixNodeImpl<String>>(rawCID: originalHeader.rawCID)
         let resolvedHeader = try await cidOnlyHeader.resolve(fetcher: fetcher)
@@ -692,8 +690,6 @@ struct ResolutionStrategiesTests {
 
     typealias UserHeader = HeaderImpl<UserScalar>
     typealias DocumentHeader = HeaderImpl<DocumentScalar>
-    typealias GenericHeader = HeaderImpl<DictionaryNode>
-
     private func createSimpleDataStructure() async throws -> (HeaderImpl<DictionaryNode>, TestStoreFetcher) {
         let testStoreFetcher = TestStoreFetcher()
 
@@ -712,12 +708,12 @@ struct ResolutionStrategiesTests {
         let doc2Header = try HeaderImpl(node: doc2)
         let doc3Header = try HeaderImpl(node: doc3)
 
-        try aliceHeader.storeRecursively(storer: testStoreFetcher)
-        try bobHeader.storeRecursively(storer: testStoreFetcher)
-        try charlieHeader.storeRecursively(storer: testStoreFetcher)
-        try doc1Header.storeRecursively(storer: testStoreFetcher)
-        try doc2Header.storeRecursively(storer: testStoreFetcher)
-        try doc3Header.storeRecursively(storer: testStoreFetcher)
+        try await aliceHeader.storeAsVolume(storer: testStoreFetcher)
+        try await bobHeader.storeAsVolume(storer: testStoreFetcher)
+        try await charlieHeader.storeAsVolume(storer: testStoreFetcher)
+        try await doc1Header.storeAsVolume(storer: testStoreFetcher)
+        try await doc2Header.storeAsVolume(storer: testStoreFetcher)
+        try await doc3Header.storeAsVolume(storer: testStoreFetcher)
 
         let documentDict = DictionaryNode(id: "alice-docs", entries: [
             "intro": doc1Header.rawCID,
@@ -732,8 +728,8 @@ struct ResolutionStrategiesTests {
 
         let documentDictHeader = try HeaderImpl(node: documentDict)
         let friendsDictHeader = try HeaderImpl(node: friendsDict)
-        try documentDictHeader.storeRecursively(storer: testStoreFetcher)
-        try friendsDictHeader.storeRecursively(storer: testStoreFetcher)
+        try await documentDictHeader.storeAsVolume(storer: testStoreFetcher)
+        try await friendsDictHeader.storeAsVolume(storer: testStoreFetcher)
 
         let rootDict = DictionaryNode(id: "root", entries: [
             "user": aliceHeader.rawCID,
@@ -742,7 +738,7 @@ struct ResolutionStrategiesTests {
         ])
 
         let rootHeader = try HeaderImpl(node: rootDict)
-        try rootHeader.storeRecursively(storer: testStoreFetcher)
+        try await rootHeader.storeAsVolume(storer: testStoreFetcher)
 
         return (rootHeader, testStoreFetcher)
     }
@@ -768,7 +764,7 @@ struct ResolutionStrategiesTests {
 
         let userScalar = UserScalar(id: "test-user", name: "Test User", email: "test@example.com")
         let userHeader = try HeaderImpl(node: userScalar)
-        try userHeader.storeRecursively(storer: testStoreFetcher)
+        try await userHeader.storeAsVolume(storer: testStoreFetcher)
 
         let resolvedUserHeader = try await userHeader.resolve(fetcher: testStoreFetcher)
 
@@ -792,8 +788,8 @@ struct ResolutionStrategiesTests {
 
         let user1Header = try HeaderImpl(node: user1)
         let user2Header = try HeaderImpl(node: user2)
-        try user1Header.storeRecursively(storer: testStoreFetcher)
-        try user2Header.storeRecursively(storer: testStoreFetcher)
+        try await user1Header.storeAsVolume(storer: testStoreFetcher)
+        try await user2Header.storeAsVolume(storer: testStoreFetcher)
 
         let metadataDict = DictionaryNode(id: "metadata", entries: [
             "created": "2024-01-01",
@@ -807,8 +803,8 @@ struct ResolutionStrategiesTests {
         let metadataHeader = try HeaderImpl(node: metadataDict)
         let rootHeader = try HeaderImpl(node: rootDict)
 
-        try metadataHeader.storeRecursively(storer: testStoreFetcher)
-        try rootHeader.storeRecursively(storer: testStoreFetcher)
+        try await metadataHeader.storeAsVolume(storer: testStoreFetcher)
+        try await rootHeader.storeAsVolume(storer: testStoreFetcher)
 
         var paths = ArrayTrie<ResolutionStrategy>()
         paths.set(["metadata"], value: .targeted)
@@ -977,7 +973,7 @@ struct ResolutionStrategiesTests {
 
         let header = try HeaderImpl(node: dict)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<DictType>(rawCID: header.rawCID)
         let resolved = try await unresolved.resolve(
@@ -1009,7 +1005,7 @@ struct ResolutionStrategiesTests {
 
         let outerH = try HeaderImpl(node: outer)
         let fetcher = TestStoreFetcher()
-        try outerH.storeRecursively(storer: fetcher)
+        try await outerH.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<OuterDict>(rawCID: outerH.rawCID)
         let resolved = try await unresolved.resolve(
@@ -1045,7 +1041,7 @@ struct DictionaryResolutionTests {
             .inserting(key: "Bar", value: baseHeader2)
         let dictionaryHeader = try HeaderImpl(node: dictionary)
         let testStoreFetcher = TestStoreFetcher()
-        try dictionaryHeader.storeRecursively(storer: testStoreFetcher)
+        try await dictionaryHeader.storeAsVolume(storer: testStoreFetcher)
         let newDictionaryHeader = HeaderImpl<BaseDictionaryType>(rawCID: dictionaryHeader.rawCID)
         let resolvedDictionary = try await newDictionaryHeader.resolveRecursive(fetcher: testStoreFetcher)
         #expect(resolvedDictionary.node != nil)
@@ -1075,7 +1071,7 @@ struct DictionaryResolutionTests {
             .inserting(key: "Bar", value: baseHeader2)
         let dictionaryHeader = try HeaderImpl(node: dictionary)
         let testStoreFetcher = TestStoreFetcher()
-        try dictionaryHeader.storeRecursively(storer: testStoreFetcher)
+        try await dictionaryHeader.storeAsVolume(storer: testStoreFetcher)
         let newDictionaryHeader = HeaderImpl<BaseDictionaryType>(rawCID: dictionaryHeader.rawCID)
         let resolvedDictionary = try await newDictionaryHeader.resolve(paths: [["Foo"]: .targeted], fetcher: testStoreFetcher)
         #expect(resolvedDictionary.node != nil)
@@ -1109,7 +1105,7 @@ struct DictionaryResolutionTests {
             .inserting(key: "G", value: baseHeader1)
         let dictionaryHeader = try HeaderImpl(node: dictionary)
         let testStoreFetcher = TestStoreFetcher()
-        try dictionaryHeader.storeRecursively(storer: testStoreFetcher)
+        try await dictionaryHeader.storeAsVolume(storer: testStoreFetcher)
         let newDictionaryHeader = HeaderImpl<BaseDictionaryType>(rawCID: dictionaryHeader.rawCID)
         let resolvedDictionary = try await newDictionaryHeader.resolve(paths: [["F"]: .list], fetcher: testStoreFetcher)
         #expect(resolvedDictionary.node != nil)
@@ -1158,7 +1154,7 @@ struct DictionaryResolutionTests {
         let outerDictionaryHeader = try HeaderImpl(node: outerDictionary)
 
         let testStoreFetcher = TestStoreFetcher()
-        try outerDictionaryHeader.storeRecursively(storer: testStoreFetcher)
+        try await outerDictionaryHeader.storeAsVolume(storer: testStoreFetcher)
 
         let newOuterDictionaryHeader = HeaderImpl<NestedDictionaryType>(rawCID: outerDictionaryHeader.rawCID)
         let resolvedDictionary = try await newOuterDictionaryHeader.resolve(paths: [["level1", "item1"]: .targeted], fetcher: testStoreFetcher)
@@ -1204,7 +1200,7 @@ struct DictionaryResolutionTests {
         let dictionaryHeader = try HeaderImpl(node: dictionary)
 
         let testStoreFetcher = TestStoreFetcher()
-        try dictionaryHeader.storeRecursively(storer: testStoreFetcher)
+        try await dictionaryHeader.storeAsVolume(storer: testStoreFetcher)
 
         let newDictionaryHeader = HeaderImpl<BaseDictionaryType>(rawCID: dictionaryHeader.rawCID)
         let resolvedDictionary = try await newDictionaryHeader.resolve(paths: [
@@ -1250,7 +1246,7 @@ struct DictionaryResolutionTests {
         let dictionaryHeader = try HeaderImpl(node: dictionary)
 
         let testStoreFetcher = TestStoreFetcher()
-        try dictionaryHeader.storeRecursively(storer: testStoreFetcher)
+        try await dictionaryHeader.storeAsVolume(storer: testStoreFetcher)
 
         let newDictionaryHeader = HeaderImpl<BaseDictionaryType>(rawCID: dictionaryHeader.rawCID)
         let resolvedDictionary = try await newDictionaryHeader.resolveRecursive(fetcher: testStoreFetcher)
@@ -1293,7 +1289,7 @@ struct DictionaryResolutionTests {
         let level4Header = try HeaderImpl(node: level4Dict)
 
         let testStoreFetcher = TestStoreFetcher()
-        try level4Header.storeRecursively(storer: testStoreFetcher)
+        try await level4Header.storeAsVolume(storer: testStoreFetcher)
 
         let newLevel4Header = HeaderImpl<Level4Type>(rawCID: level4Header.rawCID)
         let resolvedDictionary = try await newLevel4Header.resolve(paths: [["root", "level3", "level2", "deep"]: .targeted], fetcher: testStoreFetcher)
@@ -1331,7 +1327,7 @@ struct DictionaryResolutionTests {
         let dictionaryHeader = try HeaderImpl(node: dictionary)
 
         let testStoreFetcher = TestStoreFetcher()
-        try dictionaryHeader.storeRecursively(storer: testStoreFetcher)
+        try await dictionaryHeader.storeAsVolume(storer: testStoreFetcher)
 
         let newDictionaryHeader = HeaderImpl<BaseDictionaryType>(rawCID: dictionaryHeader.rawCID)
         let resolvedDictionary = try await newDictionaryHeader.resolve(paths: [
@@ -1383,7 +1379,7 @@ struct DictionaryResolutionTests {
         let higherDictionaryHeader = try HeaderImpl(node: higherDictionary)
 
         let testStoreFetcher = TestStoreFetcher()
-        try higherDictionaryHeader.storeRecursively(storer: testStoreFetcher)
+        try await higherDictionaryHeader.storeAsVolume(storer: testStoreFetcher)
         let newDictionaryHeader = HeaderImpl<HigherDictionaryType>(rawCID: higherDictionaryHeader.rawCID)
         var resolutionPaths = ArrayTrie<ResolutionStrategy>()
         resolutionPaths.set(["Fo"], value: ResolutionStrategy.list)
@@ -1419,7 +1415,7 @@ struct DictionaryResolutionTests {
         let higherDictionaryHeader = try HeaderImpl(node: higherDictionary)
 
         let testStoreFetcher = TestStoreFetcher()
-        try higherDictionaryHeader.storeRecursively(storer: testStoreFetcher)
+        try await higherDictionaryHeader.storeAsVolume(storer: testStoreFetcher)
         let newDictionaryHeader = HeaderImpl<HigherDictionaryType>(rawCID: higherDictionaryHeader.rawCID)
         var resolutionPaths = ArrayTrie<ResolutionStrategy>()
         resolutionPaths.set(["Foo", "Foo"], value: ResolutionStrategy.targeted)
@@ -1722,7 +1718,7 @@ struct DictionaryResolutionTests {
         let dictionaryHeader = try HeaderImpl(node: dictionary)
 
         let testStoreFetcher = TestStoreFetcher()
-        try dictionaryHeader.storeRecursively(storer: testStoreFetcher)
+        try await dictionaryHeader.storeAsVolume(storer: testStoreFetcher)
 
         let newDictionaryHeader1 = HeaderImpl<BaseDictionaryType>(rawCID: dictionaryHeader.rawCID)
         let resolvedDictionary1 = try await newDictionaryHeader1.resolve(paths: [["apple"]: .targeted], fetcher: testStoreFetcher)
@@ -1800,7 +1796,7 @@ struct DictionaryResolutionTests {
         let dictionaryHeader = try HeaderImpl(node: dictionary)
 
         let testStoreFetcher = TestStoreFetcher()
-        try dictionaryHeader.storeRecursively(storer: testStoreFetcher)
+        try await dictionaryHeader.storeAsVolume(storer: testStoreFetcher)
 
         let newDictionaryHeader = HeaderImpl<BaseDictionaryType>(rawCID: dictionaryHeader.rawCID)
         let resolvedDictionaryNode = try await newDictionaryHeader.resolve(fetcher: testStoreFetcher).node!.resolveList(fetcher: testStoreFetcher)
@@ -1841,7 +1837,7 @@ struct DictionaryResolutionTests {
 
         let header = try HeaderImpl(node: dict)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<DictType>(rawCID: header.rawCID)
         let resolved = try await unresolved.resolve(paths: [["F"]: .list], fetcher: fetcher)
@@ -1865,7 +1861,7 @@ struct DictionaryResolutionTests {
 
         let dictHeader = try HeaderImpl(node: dict)
         let fetcher = TestStoreFetcher()
-        try dictHeader.storeRecursively(storer: fetcher)
+        try await dictHeader.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<BaseDictionaryType>(rawCID: dictHeader.rawCID)
         let resolved = try await unresolved.resolve(paths: [["F"]: .list], fetcher: fetcher)
@@ -1890,7 +1886,7 @@ struct DictionaryResolutionTests {
             .inserting(key: "Foo", value: header1)
         let dictHeader = try HeaderImpl(node: dict)
         let fetcher = TestStoreFetcher()
-        try dictHeader.storeRecursively(storer: fetcher)
+        try await dictHeader.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<BaseDictionaryType>(rawCID: dictHeader.rawCID)
         let resolved = try await unresolved.resolveRecursive(fetcher: fetcher)
@@ -1939,7 +1935,7 @@ struct ConcurrentResolutionTests {
 
         let header = try HeaderImpl(node: dict)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<DictType>(rawCID: header.rawCID)
         let resolved = try await unresolved.resolveRecursive(fetcher: fetcher)

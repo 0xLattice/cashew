@@ -16,7 +16,7 @@ import Multicodec
 ///     func set(properties: [PathSegment: any Header]) -> Self { ... }
 /// }
 /// ```
-/// All other methods (`resolve`, `transform`, `proof`, `encrypt`, `storeRecursively`)
+/// All other methods (`resolve`, `transform`, `proof`, `encrypt`, `storeVolumes`)
 /// have default implementations provided by protocol extensions.
 /// `Codable` and `LosslessStringConvertible` are auto-synthesized from JSON serialization.
 public protocol Node: CashewQueryable, Codable, LosslessStringConvertible, Sendable {
@@ -32,7 +32,7 @@ public protocol Node: CashewQueryable, Codable, LosslessStringConvertible, Senda
     func set(properties: [PathSegment: any Header]) -> Self
 
     func resolve(paths: ArrayTrie<ResolutionStrategy>, fetcher: Fetcher) async throws -> Self
-    func storeRecursively(storer: Storer) throws
+    func storeVolumes(paths: ArrayTrie<StorageStrategy>, storer: any VolumeStorer) async throws
     func transform(transforms: ArrayTrie<Transform>) throws -> Self?
     func transform(transforms: ArrayTrie<Transform>, keyProvider: KeyProvider?) throws -> Self?
     func proof(paths: ArrayTrie<SparseMerkleProof>, fetcher: Fetcher) async throws -> Self

@@ -174,7 +174,7 @@ struct MerkleArrayAsDictionaryTests {
         for i in 0..<5 { arr = try arr.append("v\(i)") }
         let header = try HeaderImpl(node: arr)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<StringArray>(rawCID: header.rawCID)
         let resolved = try await unresolved.resolve(fetcher: fetcher)
@@ -190,7 +190,7 @@ struct MerkleArrayAsDictionaryTests {
         let arr = try StringArray().append("a").append("b")
         let header = try HeaderImpl(node: arr)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<StringArray>(rawCID: header.rawCID)
         let resolved = try await unresolved.resolve(fetcher: fetcher)
@@ -206,7 +206,7 @@ struct MerkleArrayAsDictionaryTests {
         let arr = try StringArray().append("p").append("q").append("r")
         let header = try HeaderImpl(node: arr)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<StringArray>(rawCID: header.rawCID)
         let resolved = try await unresolved.resolve(fetcher: fetcher)
@@ -299,7 +299,7 @@ struct MerkleArrayStoreResolveTests {
         let arr = try StringArray().append("alpha").append("beta").append("gamma")
         let header = try HeaderImpl(node: arr)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<StringArray>(rawCID: header.rawCID)
         let resolved = try await unresolved.resolveRecursive(fetcher: fetcher)
@@ -315,11 +315,11 @@ struct MerkleArrayStoreResolveTests {
         let arr = try StringArray().append("x").append("y").append("z")
         let header = try HeaderImpl(node: arr)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let mutated = try arr.mutating(at: 1, value: "Y")
         let mutatedHeader = try HeaderImpl(node: mutated)
-        try mutatedHeader.storeRecursively(storer: fetcher)
+        try await mutatedHeader.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<StringArray>(rawCID: mutatedHeader.rawCID).resolveRecursive(fetcher: fetcher)
         #expect(try resolved.node!.get(at: 0) == "x")
@@ -335,7 +335,7 @@ struct MerkleArrayStoreResolveTests {
         }
         let header = try HeaderImpl(node: arr)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<StringArray>(rawCID: header.rawCID).resolveRecursive(fetcher: fetcher)
         #expect(resolved.node!.count == 50)
@@ -356,7 +356,7 @@ struct MerkleArrayRangeResolutionTests {
         }
         let header = try HeaderImpl(node: arr)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<StringArray>(rawCID: header.rawCID)
         let resolved = try await unresolved.resolve(fetcher: fetcher)
@@ -373,7 +373,7 @@ struct MerkleArrayRangeResolutionTests {
         let arr = try StringArray().append("a").append("b").append("c")
         let header = try HeaderImpl(node: arr)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<StringArray>(rawCID: header.rawCID).resolve(fetcher: fetcher)
         let rangeResolved = try await resolved.node!.resolve(paths: StringArray.rangePaths(-5..<100), fetcher: fetcher)
@@ -401,9 +401,9 @@ struct MerkleArrayRangeResolutionTests {
 
         let header = try HeaderImpl(node: outer)
         let fetcher = TestStoreFetcher()
-        try h1.storeRecursively(storer: fetcher)
-        try h2.storeRecursively(storer: fetcher)
-        try header.storeRecursively(storer: fetcher)
+        try await h1.storeAsVolume(storer: fetcher)
+        try await h2.storeAsVolume(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<OuterArray>(rawCID: header.rawCID)
         let resolved = try await unresolved.resolve(fetcher: fetcher)
@@ -431,10 +431,10 @@ struct MerkleArrayNestedRangeTests {
         let outer = try OuterArray().append(h1).append(h2).append(h3)
         let header = try HeaderImpl(node: outer)
         let fetcher = TestStoreFetcher()
-        try h1.storeRecursively(storer: fetcher)
-        try h2.storeRecursively(storer: fetcher)
-        try h3.storeRecursively(storer: fetcher)
-        try header.storeRecursively(storer: fetcher)
+        try await h1.storeAsVolume(storer: fetcher)
+        try await h2.storeAsVolume(storer: fetcher)
+        try await h3.storeAsVolume(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<OuterArray>(rawCID: header.rawCID)
         let resolved = try await unresolved.resolve(fetcher: fetcher)
@@ -545,10 +545,10 @@ struct MerkleArrayNestedRangeTests {
 
         let header = try HeaderImpl(node: outer)
         let fetcher = TestStoreFetcher()
-        try h1.storeRecursively(storer: fetcher)
-        try h2.storeRecursively(storer: fetcher)
-        try h3.storeRecursively(storer: fetcher)
-        try header.storeRecursively(storer: fetcher)
+        try await h1.storeAsVolume(storer: fetcher)
+        try await h2.storeAsVolume(storer: fetcher)
+        try await h3.storeAsVolume(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let listResolved = try await HeaderImpl<OuterArray>(rawCID: header.rawCID)
             .resolveRecursive(fetcher: fetcher)
@@ -737,7 +737,7 @@ struct MerkleArrayHeaderElementTests {
         let arr = try EncryptableArray().append(h1).append(h2).append(h3)
         let header = try HeaderImpl(node: arr)
         let fetcher = TestStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<EncryptableArray>(rawCID: header.rawCID)
             .resolveRecursive(fetcher: fetcher)
@@ -757,9 +757,9 @@ struct MerkleArrayHeaderElementTests {
         let outer = try OuterArray().append(h1).append(h2)
         let outerHeader = try HeaderImpl(node: outer)
         let fetcher = TestStoreFetcher()
-        try h1.storeRecursively(storer: fetcher)
-        try h2.storeRecursively(storer: fetcher)
-        try outerHeader.storeRecursively(storer: fetcher)
+        try await h1.storeAsVolume(storer: fetcher)
+        try await h2.storeAsVolume(storer: fetcher)
+        try await outerHeader.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<OuterArray>(rawCID: outerHeader.rawCID)
             .resolveRecursive(fetcher: fetcher)
@@ -797,7 +797,7 @@ struct MerkleArrayRangeQueryPerformanceTests {
         }
         let header = try HeaderImpl(node: arr)
         let fetcher = CountingStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let unresolved = HeaderImpl<StringArray>(rawCID: header.rawCID)
         fetcher.resetFetchCount()
@@ -837,8 +837,8 @@ struct MerkleArrayRangeQueryPerformanceTests {
 
         let smallFetcher = CountingStoreFetcher()
         let largeFetcher = CountingStoreFetcher()
-        try smallHeader.storeRecursively(storer: smallFetcher)
-        try largeHeader.storeRecursively(storer: largeFetcher)
+        try await smallHeader.storeAsVolume(storer: smallFetcher)
+        try await largeHeader.storeAsVolume(storer: largeFetcher)
 
         let smallResolved = try await HeaderImpl<StringArray>(rawCID: smallHeader.rawCID).resolve(fetcher: smallFetcher)
         let largeResolved = try await HeaderImpl<StringArray>(rawCID: largeHeader.rawCID).resolve(fetcher: largeFetcher)
@@ -873,8 +873,8 @@ struct MerkleArrayRangeQueryPerformanceTests {
         let h200 = try HeaderImpl(node: arr200)
         let f100 = CountingStoreFetcher()
         let f200 = CountingStoreFetcher()
-        try h100.storeRecursively(storer: f100)
-        try h200.storeRecursively(storer: f200)
+        try await h100.storeAsVolume(storer: f100)
+        try await h200.storeAsVolume(storer: f200)
 
         _ = try await HeaderImpl<StringArray>(rawCID: h100.rawCID).resolveRecursive(fetcher: f100)
         let fetches100 = f100.fetchCount
@@ -894,7 +894,7 @@ struct MerkleArrayRangeQueryPerformanceTests {
 
         let header = try HeaderImpl(node: arr)
         let fetcher = CountingStoreFetcher()
-        try header.storeRecursively(storer: fetcher)
+        try await header.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<StringArray>(rawCID: header.rawCID).resolve(fetcher: fetcher)
 
@@ -927,11 +927,11 @@ struct MerkleArrayRangeQueryPerformanceTests {
                 inner = try inner.append("[\(i),\(j)]")
             }
             let innerHeader = try HeaderImpl(node: inner)
-            try innerHeader.storeRecursively(storer: fetcher)
+            try await innerHeader.storeAsVolume(storer: fetcher)
             outer = try outer.append(innerHeader)
         }
         let outerHeader = try HeaderImpl(node: outer)
-        try outerHeader.storeRecursively(storer: fetcher)
+        try await outerHeader.storeAsVolume(storer: fetcher)
 
         let resolved = try await HeaderImpl<OuterArray>(rawCID: outerHeader.rawCID).resolve(fetcher: fetcher)
 
@@ -1022,7 +1022,7 @@ struct MerkleArrayTargetedEncryptionTests {
         var encryption = ArrayTrie<EncryptionStrategy>()
         encryption.set([EncryptableArray.binaryKey(1)], value: .targeted(key))
         let encrypted = try header.encrypt(encryption: encryption)
-        try encrypted.storeRecursively(storer: fetcher)
+        try await encrypted.storeAsVolume(storer: fetcher)
 
         let resolved = try await encrypted.removingNode().resolveRecursive(fetcher: fetcher)
         let val0 = try resolved.node!.get(at: 0)!
@@ -1047,7 +1047,7 @@ struct MerkleArrayTargetedEncryptionTests {
         var encryption = ArrayTrie<EncryptionStrategy>()
         encryption.set([EncryptableArray.binaryKey(0)], value: .targeted(key))
         let encrypted = try header.encrypt(encryption: encryption)
-        try encrypted.storeRecursively(storer: authorizedFetcher)
+        try await encrypted.storeAsVolume(storer: authorizedFetcher)
 
         let encVal = try encrypted.node!.get(at: 0)!
         let cidOnly = HeaderImpl<TestScalar>(rawCID: encVal.rawCID, node: nil, encryptionInfo: encVal.encryptionInfo)
@@ -1095,7 +1095,7 @@ struct MerkleArrayRecursiveEncryptionTests {
         var encryption = ArrayTrie<EncryptionStrategy>()
         encryption.set([""], value: .recursive(key))
         let encrypted = try header.encrypt(encryption: encryption)
-        try encrypted.storeRecursively(storer: fetcher)
+        try await encrypted.storeAsVolume(storer: fetcher)
 
         let resolved = try await encrypted.removingNode().resolveRecursive(fetcher: fetcher)
         for i in 0..<3 {
@@ -1214,7 +1214,7 @@ struct MerkleArrayEncryptionTransformTests {
         encryption.set([""], value: .recursive(key))
         let encrypted = try header.encrypt(encryption: encryption)
 
-        try encrypted.storeRecursively(storer: fetcher)
+        try await encrypted.storeAsVolume(storer: fetcher)
 
         let resolved = try await encrypted.removingNode().resolveRecursive(fetcher: fetcher)
         #expect(resolved.node!.count == 5)
@@ -1261,7 +1261,7 @@ struct MerkleArrayEncryptedRangeQueryTests {
         var encryption = ArrayTrie<EncryptionStrategy>()
         encryption.set([""], value: .recursive(key))
         let encrypted = try header.encrypt(encryption: encryption)
-        try encrypted.storeRecursively(storer: fetcher)
+        try await encrypted.storeAsVolume(storer: fetcher)
 
         let resolved = try await encrypted.removingNode().resolve(fetcher: fetcher)
         let rangeResolved = try await resolved.node!.resolve(
@@ -1293,7 +1293,7 @@ struct MerkleArrayEncryptedRangeQueryTests {
             encryption.set([EncryptableArray.binaryKey(i)], value: .targeted(key))
         }
         let encrypted = try header.encrypt(encryption: encryption)
-        try encrypted.storeRecursively(storer: fetcher)
+        try await encrypted.storeAsVolume(storer: fetcher)
 
         let resolved = try await encrypted.removingNode().resolveRecursive(fetcher: fetcher)
 
@@ -1339,9 +1339,9 @@ struct MerkleArrayEncryptedRangeQueryTests {
         let encVal1 = try encrypted.node!.get(at: 1)!
         #expect(encVal1.encryptionInfo == nil)
 
-        try encrypted.storeRecursively(storer: fetcher)
-        try h0.storeRecursively(storer: fetcher)
-        try h1.storeRecursively(storer: fetcher)
+        try await encrypted.storeAsVolume(storer: fetcher)
+        try await h0.storeAsVolume(storer: fetcher)
+        try await h1.storeAsVolume(storer: fetcher)
 
         let resolved = try await encrypted.removingNode().resolveRecursive(fetcher: fetcher)
 

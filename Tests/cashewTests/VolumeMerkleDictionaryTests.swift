@@ -8,9 +8,8 @@ import ArrayTrie
 /// means "some chain's pin set references this Volume root" — only works if every
 /// trie-internal link is itself a Volume boundary that can be pinned independently.
 /// If a single internal header drops Volume conformance, its subtree becomes
-/// protected only transitively by the nearest outer Volume, and any sweep that
-/// collects that outer Volume also collects the subtree — even if a different
-/// chain still needs it. These tests would catch that.
+/// inseparable from the nearest outer Volume and cannot be retained or evicted as
+/// an independent unit. These tests would catch that.
 @Suite("Volume Merkle Dictionary — all headers are Volumes")
 struct VolumeMerkleDictionaryTests {
 
@@ -198,49 +197,29 @@ private struct Company: Node, Sendable {
 
 // MARK: - Store → Fetch round-trip tests
 
-/// A VolumeAwareStorer that groups CIDs by Volume boundary, mirroring
-/// BrokerStorer's behavior. Each provide() seals the previous buffer
-/// into a volume-keyed dict. fetch() serves from the volume store.
-private final class VolumeGroupingStore: VolumeAwareStorer, @unchecked Sendable {
+/// A complete-Volume sink used by round-trip and proof tests.
+private final class VolumeGroupingStore: VolumeStorer, @unchecked Sendable {
     private let lock = NSLock()
-    private var activeRoot: String?
-    private var buffer: [String: Data] = [:]
     private(set) var volumes: [String: [String: Data]] = [:]
 
     var providedRoots: [String] {
         lock.withLock { Array(volumes.keys) }
     }
 
-    func enterVolume(rootCID: String) throws {
+    func store(volume: SerializedVolume) async throws {
         lock.withLock {
-            if let root = activeRoot, !buffer.isEmpty {
-                volumes[root] = buffer
-            }
-            activeRoot = rootCID
-            buffer = [:]
-        }
-    }
-
-    func store(rawCid: String, data: Data) throws {
-        lock.withLock { buffer[rawCid] = data }
-    }
-
-    func contains(rawCid: String) -> Bool { false }
-
-    func seal() {
-        lock.withLock {
-            if let root = activeRoot, !buffer.isEmpty {
-                volumes[root] = buffer
-            }
-            activeRoot = nil
-            buffer = [:]
+            volumes[volume.root] = volume.entries
         }
     }
 
     func allData() -> [String: Data] {
         lock.withLock {
             var all: [String: Data] = [:]
-            for (_, entries) in volumes { for (k, v) in entries { all[k] = v } }
+            for (_, entries) in volumes {
+                for (cid, data) in entries {
+                    all[cid] = data
+                }
+            }
             return all
         }
     }
@@ -274,8 +253,7 @@ struct VolumeRoundTripTests {
         let outer = try VolumeImpl(node: dict)
 
         let store = VolumeGroupingStore()
-        try outer.storeRecursively(storer: store)
-        store.seal()
+        try await outer.storeRecursively(storer: store)
 
         #expect(!store.volumes.isEmpty, "storeRecursively should produce at least one volume")
         #expect(store.volumes[outer.rawCID] != nil, "outer Volume root should have its own volume group")
@@ -298,8 +276,7 @@ struct VolumeRoundTripTests {
         let outer = try VolumeImpl(node: dict)
 
         let store = VolumeGroupingStore()
-        try outer.storeRecursively(storer: store)
-        store.seal()
+        try await outer.storeRecursively(storer: store)
 
         #expect(store.volumes.count >= 2, "branched trie should produce multiple volume groups")
 
@@ -404,8 +381,7 @@ struct VolumeRoundTripTests {
         let outer = try VolumeImpl(node: dict)
 
         let store = VolumeGroupingStore()
-        try outer.storeRecursively(storer: store)
-        store.seal()
+        try await outer.storeRecursively(storer: store)
 
         let stripped = VolumeImpl<Dict>(rawCID: outer.rawCID, node: nil, encryptionInfo: nil)
         let fetcher = VolumeGroupingFetcher(store: store)
@@ -437,8 +413,7 @@ struct VolumeRoundTripTests {
         let outer = try VolumeImpl(node: dict)
 
         let store = VolumeGroupingStore()
-        try outer.storeRecursively(storer: store)
-        store.seal()
+        try await outer.storeRecursively(storer: store)
 
         let stripped = VolumeImpl<Dict>(rawCID: outer.rawCID, node: nil, encryptionInfo: nil)
         let fetcher = VolumeGroupingFetcher(store: store)
@@ -462,19 +437,18 @@ struct VolumeRoundTripTests {
         }
     }
 
-    @Test("Store fires provide() at every Volume boundary during storeRecursively")
-    func storeFiresProvideAtBoundaries() throws {
+    @Test("Store emits one complete payload at every Volume boundary")
+    func storeEmitsCompleteVolumeBoundaries() async throws {
         let dict = try Dict()
             .inserting(key: "alice", value: "v1")
             .inserting(key: "bob", value: "v2")
         let outer = try VolumeImpl(node: dict)
 
         let store = VolumeGroupingStore()
-        try outer.storeRecursively(storer: store)
-        store.seal()
+        try await outer.storeRecursively(storer: store)
 
         #expect(store.volumes[outer.rawCID] != nil,
-                "provide() should fire for the outer Volume root during store")
+                "the outer Volume root should be emitted during store")
 
         var headerCIDs: Set<String> = []
         try VolumeMerkleDictionaryTests.visitAllHeaders(in: dict) { header in
@@ -482,16 +456,12 @@ struct VolumeRoundTripTests {
         }
         for cid in headerCIDs {
             #expect(store.volumes[cid] != nil,
-                    "provide() should fire for internal header CID \(cid) during store")
+                    "internal Volume \(cid) should be emitted during store")
         }
     }
 
     @Test("Non-Volume children are stored inside enclosing Volume's group, not lost")
-    func nonVolumeChildrenInEnclosingVolume() throws {
-        // MixedNode has both a HeaderImpl child (plain) and a VolumeImpl child.
-        // With Set iteration, the Volume child might be visited first, sealing
-        // the parent's buffer before the HeaderImpl child is stored.
-        // The fix in Node+store.swift stores non-Volume children first.
+    func nonVolumeChildrenInEnclosingVolume() async throws {
         let store = VolumeGroupingStore()
         let labelDict = try VolumeMerkleDictionaryImpl<String>().inserting(key: "name", value: "test")
         let dataDict = VolumeMerkleDictionaryImpl<String>()
@@ -500,8 +470,7 @@ struct VolumeRoundTripTests {
             data: try VolumeImpl(node: dataDict)
         )
         let root = try VolumeImpl(node: mixed)
-        try root.storeRecursively(storer: store)
-        store.seal()
+        try await root.storeRecursively(storer: store)
 
         let rootVolume = store.volumes[root.rawCID]
         #expect(rootVolume != nil, "root volume should exist")
@@ -512,15 +481,14 @@ struct VolumeRoundTripTests {
     }
 
     @Test("Every VolumeRadixHeader in a VolumeMerkleDictionary gets its own volume root")
-    func radixHeadersAreVolumeRoots() throws {
+    func radixHeadersAreVolumeRoots() async throws {
         let dict = try VolumeMerkleDictionaryImpl<String>()
             .inserting(key: "alice", value: "100")
             .inserting(key: "bob", value: "200")
 
         let outer = try VolumeImpl(node: dict)
         let store = VolumeGroupingStore()
-        try outer.storeRecursively(storer: store)
-        store.seal()
+        try await outer.storeRecursively(storer: store)
 
         #expect(store.volumes[outer.rawCID] != nil, "outer VolumeImpl must be a volume root")
 
@@ -531,7 +499,7 @@ struct VolumeRoundTripTests {
 
         for cid in allHeaderCIDs {
             #expect(store.volumes[cid] != nil,
-                    "VolumeRadixHeader \(String(cid.prefix(16)))… must have its own volume root — missing means provide() never fired during store")
+                    "VolumeRadixHeader \(String(cid.prefix(16)))… must have its own volume root")
         }
     }
 
@@ -548,8 +516,7 @@ struct VolumeRoundTripTests {
         let root = try VolumeImpl(node: company)
 
         let store = VolumeGroupingStore()
-        try root.storeRecursively(storer: store)
-        store.seal()
+        try await root.storeRecursively(storer: store)
 
         #expect(store.volumes.count >= 3, "4-level hierarchy should produce multiple volume groups")
 

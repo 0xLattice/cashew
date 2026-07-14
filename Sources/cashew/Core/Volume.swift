@@ -4,20 +4,23 @@ import Multihash
 import CID
 import Crypto
 
-/// A point in a Merkle DAG where peers may store child blocks contiguously.
+/// A storage and retention boundary in a content-addressed DAG.
 ///
-/// A Volume marks a semantically important boundary in the data structure.
-/// When resolution enters a Volume, the fetcher is notified with the CID of
-/// this point and the resolution paths, so it can locate a peer that holds
-/// the child blocks under this CID.
+/// A Volume has the same CID and resolution behavior as any other ``Header``.
+/// Its distinct role is on the storage side: Cashew serializes the Volume root
+/// plus all ordinary descendants up to the next Volume boundary as one complete
+/// ``SerializedVolume``.
 ///
-/// Volumes can be nested. Each Volume boundary triggers its own ``provide``
-/// call on the fetcher, allowing it to locate different peers for each volume.
+/// Volumes may be nested. The enclosing node commits to the nested Volume's CID,
+/// while the nested Volume's bytes remain independently available, retainable, and
+/// evictable. Storing an outer Volume does not store a separate relationship to the
+/// nested Volume; that relationship remains encoded in the content-addressed node.
+/// Volumes are persisted through ``VolumeStorer``.
 ///
 /// ```swift
 /// typealias UserVolume = VolumeImpl<MerkleDictionaryImpl<String>>
-/// let vol = UserVolume(node: users)
-/// let resolved = try await vol.resolve(paths: paths, fetcher: fetcher)
+/// let volume = try UserVolume(node: users)
+/// try await volume.storeRecursively(storer: volumeStore)
 /// ```
 public protocol Volume: Header { }
 

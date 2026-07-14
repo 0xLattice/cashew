@@ -152,7 +152,7 @@ struct MerkleSetTests {
 
             let store = TestStoreFetcher()
             let header = try HeaderImpl(node: set)
-            try header.storeRecursively(storer: store)
+            try await header.storeAsVolume(storer: store)
 
             let cidOnly = HeaderImpl<MerkleSetImpl>(rawCID: header.rawCID)
             let resolved = try await cidOnly.resolveRecursive(fetcher: store)

@@ -2,8 +2,8 @@ import Foundation
 
 /// A batched content source: fetch many CIDs in one call.
 ///
-/// This is the clean replacement for the per-CID ``Fetcher`` + the
-/// ``VolumeAwareFetcher`` `enterVolume` side-channel. Resolution computes the
+/// This complements the per-CID ``Fetcher`` without a Volume-specific side
+/// channel. Resolution computes the
 /// frontier of CIDs it needs next (see the closure walk) and asks for the whole
 /// frontier at once, so a networked backend does one round-trip per BFS level
 /// instead of one per node — and there is no Header-vs-Volume fetch divergence.

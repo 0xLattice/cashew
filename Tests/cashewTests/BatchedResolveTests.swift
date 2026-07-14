@@ -5,14 +5,14 @@ import ArrayTrie
 
 /// A map-backed store that counts how it's accessed, so we can compare the
 /// per-CID fetch path against the batched ContentSource path.
-final class CountingStore: Fetcher, ContentSource, Storer, @unchecked Sendable {
+final class CountingStore: Fetcher, ContentSource, TestVolumeStore, @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [String: Data] = [:]
     private(set) var perCidCalls = 0     // Fetcher: one network trip per node
     private(set) var batchCalls = 0      // ContentSource: one trip per wave/level
     private(set) var totalCidsBatched = 0
 
-    func store(rawCid: String, data: Data) throws {
+    func storeRaw(rawCid: String, data: Data) {
         lock.withLock { storage[rawCid] = data }
     }
 
@@ -40,20 +40,20 @@ final class CountingStore: Fetcher, ContentSource, Storer, @unchecked Sendable {
 @Suite("Batched resolution over ContentSource")
 struct BatchedResolveTests {
 
-    private func buildStoredDictionary(keyCount: Int) throws -> (cid: String, store: CountingStore) {
+    private func buildStoredDictionary(keyCount: Int) async throws -> (cid: String, store: CountingStore) {
         let store = CountingStore()
         var dict = MerkleDictionaryImpl<String>()
         for i in 0..<keyCount {
             dict = try dict.inserting(key: "key-\(i)", value: "value-\(i)")
         }
         let vol = try VolumeImpl(node: dict)
-        try vol.storeRecursively(storer: store)
+        try await vol.storeRecursively(storer: store)
         return (vol.rawCID, store)
     }
 
     @Test("Batched resolve yields the identical structure as per-CID resolve")
     func batchedMatchesPerCid() async throws {
-        let (cid, store) = try buildStoredDictionary(keyCount: 40)
+        let (cid, store) = try await buildStoredDictionary(keyCount: 40)
 
         let viaFetcher = try await VolumeImpl<MerkleDictionaryImpl<String>>(rawCID: cid)
             .resolveRecursive(fetcher: store)
@@ -70,12 +70,12 @@ struct BatchedResolveTests {
 
     @Test("Batched resolve collapses per-node trips into per-level batches")
     func batchedDoesFewerRoundTrips() async throws {
-        let (cid, perCidStore) = try buildStoredDictionary(keyCount: 40)
+        let (cid, perCidStore) = try await buildStoredDictionary(keyCount: 40)
         _ = try await VolumeImpl<MerkleDictionaryImpl<String>>(rawCID: cid)
             .resolveRecursive(fetcher: perCidStore)
         let perCidTrips = perCidStore.perCidCalls
 
-        let (cid2, batchedStore) = try buildStoredDictionary(keyCount: 40)
+        let (cid2, batchedStore) = try await buildStoredDictionary(keyCount: 40)
         _ = try await VolumeImpl<MerkleDictionaryImpl<String>>(rawCID: cid2)
             .resolveRecursive(source: batchedStore)
         let batchedTrips = batchedStore.batchCalls

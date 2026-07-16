@@ -9,6 +9,42 @@ import Multihash
 @Suite("Headers & Content Addressability")
 struct ContentAddressabilityTests {
 
+    @Test("Verification honors a CID's declared digest length")
+    func testTruncatedMultihashVerification() throws {
+        let data = Data("content-addressed payload".utf8)
+        let multihash = try Multihash(raw: data, hashedWith: .sha2_256, customByteLength: 16)
+        let cid = try CID(version: .v1, codec: .raw, multihash: multihash).toBaseEncodedString
+
+        try verifyContentAddress(data, matches: cid)
+
+        #expect(throws: DataErrors.cidMismatch) {
+            try verifyContentAddress(data + Data([0]), matches: cid)
+        }
+    }
+
+    @Test("Identity multihashes require the complete payload")
+    func testIdentityMultihashVerificationIsExact() throws {
+        let data = Data("inline".utf8)
+        let multihash = try Multihash(raw: data, hashedWith: .identity)
+        let cid = try CID(version: .v1, codec: .raw, multihash: multihash).toBaseEncodedString
+
+        try verifyContentAddress(data, matches: cid)
+
+        #expect(throws: DataErrors.cidMismatch) {
+            try verifyContentAddress(data + Data([0]), matches: cid)
+        }
+    }
+
+    @Test("Zero-length digests do not authenticate content")
+    func testZeroLengthDigestIsRejected() throws {
+        let multihash = try Multihash(raw: Data("anything".utf8), hashedWith: .sha2_256, customByteLength: 0)
+        let cid = try CID(version: .v1, codec: .raw, multihash: multihash).toBaseEncodedString
+
+        #expect(throws: (any Error).self) {
+            try verifyContentAddress(Data("anything".utf8), matches: cid)
+        }
+    }
+
     @Suite("Header Basics")
     struct HeaderBasics {
 

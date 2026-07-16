@@ -192,10 +192,16 @@ public extension Header {
 
 func verifyContentAddress(_ data: Data, matches rawCID: String) throws {
     let expectedCID = try CID(rawCID)
-    guard let hashAlgorithm = expectedCID.multihash.algorithm else {
+    guard let hashAlgorithm = expectedCID.multihash.algorithm,
+          let digestLength = expectedCID.multihash.length,
+          digestLength > 0 else {
         throw DataErrors.cidCreationFailed
     }
-    let actualMultihash = try Multihash(raw: data, hashedWith: hashAlgorithm)
+    let actualMultihash = try Multihash(
+        raw: data,
+        hashedWith: hashAlgorithm,
+        customByteLength: hashAlgorithm == .identity ? nil : digestLength
+    )
     let actualCID = try CID(
         version: expectedCID.version,
         codec: expectedCID.codec,

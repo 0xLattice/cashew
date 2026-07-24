@@ -5,20 +5,16 @@ import Multicodec
 import Multihash
 import Crypto
 
-/// Return the single storage-key spelling for a CID. Invalid placeholders are
+/// Returns the single storage-key spelling for a CID. Invalid placeholders are
 /// left unchanged; content verification still rejects them.
-public func canonicalCIDIfValid(_ rawCID: String) -> String? {
+func canonicalCID(_ rawCID: String) -> String {
     guard let cid = try? CID(rawCID),
           let canonical = try? CID(
             version: cid.version,
             codec: cid.codec,
             multihash: cid.multihash
-          ) else { return nil }
+          ) else { return rawCID }
     return canonical.toBaseEncodedString
-}
-
-public func canonicalCID(_ rawCID: String) -> String {
-    canonicalCIDIfValid(rawCID) ?? rawCID
 }
 
 /// A content-addressed reference to a ``Node``.

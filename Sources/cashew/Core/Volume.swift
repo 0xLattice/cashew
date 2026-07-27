@@ -35,7 +35,7 @@ public struct VolumeImpl<NodeType: Node>: Volume {
     }
 
     public init(rawCID: String, node: NodeType?, encryptionInfo: EncryptionInfo?) {
-        self.rawCID = rawCID
+        self.rawCID = canonicalCID(rawCID)
         self.rawNode = node.map { Box($0) }
         self.encryptionInfo = encryptionInfo
     }
@@ -61,7 +61,7 @@ extension VolumeImpl: Codable where NodeType: Codable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        rawCID = try container.decode(String.self, forKey: .rawCID)
+        rawCID = canonicalCID(try container.decode(String.self, forKey: .rawCID))
         encryptionInfo = try container.decodeIfPresent(EncryptionInfo.self, forKey: .encryptionInfo)
         rawNode = nil
     }

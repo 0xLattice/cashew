@@ -4,10 +4,22 @@ import ArrayTrie
 import CID
 @preconcurrency import Multicodec
 import Multihash
+import Multibase
 @testable import cashew
 
 @Suite("Headers & Content Addressability")
 struct ContentAddressabilityTests {
+
+    @Test("CID references normalize equivalent multibase spellings")
+    func testCIDReferenceCanonicalization() throws {
+        let canonical = try HeaderImpl(node: TestScalar(val: 7)).rawCID
+        let cid = try CID(canonical)
+        let alternate = BaseEncoding.base16.encode(data: cid.rawData)
+
+        #expect(canonicalCID(alternate) == canonical)
+        #expect(HeaderImpl<TestScalar>(rawCID: alternate).rawCID == canonical)
+        #expect(VolumeImpl<TestScalar>(rawCID: alternate).rawCID == canonical)
+    }
 
     @Test("Verification honors a CID's declared digest length")
     func testTruncatedMultihashVerification() throws {

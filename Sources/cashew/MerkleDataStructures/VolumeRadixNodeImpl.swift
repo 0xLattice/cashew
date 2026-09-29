@@ -39,10 +39,6 @@ where Value: Codable, Value: Sendable, Value: LosslessStringConvertible {
         prefix = try container.decode(String.self, forKey: .prefix)
         value = try container.decodeIfPresent(ValueType.self, forKey: .value)
 
-        let entries = try container.decode([SortedEntry<ChildType>].self, forKey: .children)
-        children = Dictionary(uniqueKeysWithValues: entries.compactMap { entry in
-            guard let char = entry.key.first else { return nil }
-            return (char, entry.value)
-        })
+        children = try container.decodeChildMap(ChildType.self, forKey: .children)
     }
 }

@@ -47,14 +47,18 @@ private let sharedJSONEncoder: JSONEncoder = {
 }()
 
 public extension Node {
+    /// Decodes node bytes, failing closed. Only canonical DAG-CBOR is
+    /// accepted: the decoded node must re-encode to exactly `data`, which
+    /// rejects non-minimal integers, unsorted or duplicate map keys, unknown
+    /// fields, non-canonical CID strings and trailing bytes. Every fetched
+    /// node passes through here, so one node has one byte spelling.
     init?(data: Data) {
-       if let decoded = try? DagCBOR.decode(Self.self, from: data) {
-           self = decoded
-       } else if let decoded = try? sharedJSONDecoder.decode(Self.self, from: data) {
-           self = decoded
-       } else {
-           return nil
-       }
+        guard let decoded = try? DagCBOR.decode(Self.self, from: data),
+              let reencoded = try? DagCBOR.encode(decoded),
+              reencoded == data else {
+            return nil
+        }
+        self = decoded
     }
 
     func toData() -> Data? {
@@ -66,8 +70,10 @@ public extension Node {
     }
 
     init?(_ description: String) {
-        guard let data = description.data(using: .utf8) else { return nil }
-        guard let newNode = Self(data: data) else { return nil }
+        // `description` is JSON (see below), so the string form decodes as
+        // JSON. Node bytes (`init?(data:)`) never fall back to JSON.
+        guard let data = description.data(using: .utf8),
+              let newNode = try? sharedJSONDecoder.decode(Self.self, from: data) else { return nil }
         self = newNode
     }
 

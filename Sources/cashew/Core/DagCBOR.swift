@@ -33,9 +33,13 @@ public struct DagCBOR {
 
     // MARK: - Decode
 
+    /// Decodes exactly one CBOR item. Bytes after that item are rejected.
     public static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        // The parser indexes from zero; rebase a slice so it cannot trap.
+        let data = data.startIndex == 0 ? data : Data(data)
         var offset = 0
         let value = try parseValue(data, offset: &offset)
+        guard offset == data.count else { throw DagCBORError.invalidCBOR }
         return try T(from: DagCBORDecoder(value: value, codingPath: []))
     }
 

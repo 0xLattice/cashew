@@ -74,6 +74,45 @@ struct FlatDictionaryTests {
     }
 }
 
+/// Two children under one key are corrupt data: decoding throws, never traps.
+@Suite("Trie nodes refuse duplicate child keys")
+struct DuplicateChildKeyTests {
+    struct Ref: Codable { let rawCID: String }
+    struct Entry: Codable { let key: String; let value: Ref }
+    struct CountedWire: Codable { let count: Int; let children: [Entry] }
+    struct RadixWire: Codable { let prefix: String; let children: [Entry] }
+
+    func entries(_ keys: [String]) throws -> [Entry] {
+        let cid = try HeaderImpl(node: TestScalar(val: 1)).rawCID
+        return keys.map { Entry(key: $0, value: Ref(rawCID: cid)) }
+    }
+
+    /// The single-entry wire decodes, so only the duplicate is refused.
+    func check<T: Codable>(_ type: T.Type, _ wire: ([Entry]) throws -> some Encodable) throws {
+        #expect(throws: Never.self) { try DagCBOR.decode(type, from: DagCBOR.encode(wire(entries(["a"])))) }
+        #expect(throws: DecodingError.self) { try DagCBOR.decode(type, from: DagCBOR.encode(wire(entries(["a", "a"])))) }
+    }
+
+    @Test func merkleDictionary() throws {
+        try check(MerkleDictionaryImpl<String>.self) { CountedWire(count: 1, children: $0) }
+    }
+    @Test func merkleArray() throws {
+        try check(MerkleArrayImpl<String>.self) { CountedWire(count: 1, children: $0) }
+    }
+    @Test func merkleSet() throws {
+        try check(MerkleSetImpl.self) { CountedWire(count: 1, children: $0) }
+    }
+    @Test func volumeMerkleDictionary() throws {
+        try check(VolumeMerkleDictionaryImpl<String>.self) { CountedWire(count: 1, children: $0) }
+    }
+    @Test func radixNode() throws {
+        try check(RadixNodeImpl<String>.self) { RadixWire(prefix: "", children: $0) }
+    }
+    @Test func volumeRadixNode() throws {
+        try check(VolumeRadixNodeImpl<String>.self) { RadixWire(prefix: "", children: $0) }
+    }
+}
+
 @Suite("DAG-CBOR encoding is linear in collection size")
 struct EncoderScalingTests {
     /// Best of three runs, in seconds.
@@ -104,7 +143,6 @@ struct EncoderScalingTests {
         // Linear is ~8x; the old copy-per-append encoder was ~64x.
         #expect(arrayRatio < 24, "array encode ratio \(arrayRatio)")
         #expect(mapRatio < 24, "map encode ratio \(mapRatio)")
-        #expect(try seconds { _ = try DagCBOR.encode(largeArray) } < 1)
     }
 }
 

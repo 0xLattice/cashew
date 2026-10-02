@@ -5,6 +5,10 @@ public enum DagCBORError: Error {
     case integerOverflow
     case unexpectedEnd
     case invalidCBOR
+    /// The bytes decode, but are not the bytes their value encodes to.
+    case nonCanonical
+    /// An array or map longer than ``DagCBOR/maxCollectionCount``.
+    case collectionTooLarge
 }
 
 public struct DagCBOR {
@@ -33,10 +37,17 @@ public struct DagCBOR {
 
     // MARK: - Decode
 
-    public static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+    /// Decodes `data` only if it is the one encoding of the value it holds:
+    /// re-encoding the result must give back exactly these bytes. That single
+    /// rule refuses every second spelling of a value (trailing bytes,
+    /// non-minimal heads, unsorted or repeated keys, ignored fields, ...),
+    /// so one value has one CID.
+    public static func decode<T: Codable>(_ type: T.Type, from data: Data) throws -> T {
         var offset = 0
         let value = try parseValue(data, offset: &offset)
-        return try T(from: DagCBORDecoder(value: value, codingPath: []))
+        let decoded = try T(from: DagCBORDecoder(value: value, codingPath: []))
+        guard try encode(decoded) == data else { throw DagCBORError.nonCanonical }
+        return decoded
     }
 
     // MARK: - CBOR Parser
@@ -46,7 +57,9 @@ public struct DagCBOR {
     private static let maxDepth = 64
     /// Maximum number of elements in a single CBOR array or map. Prevents
     /// Int(UInt64) overflow on reserveCapacity and OOM from huge counts.
-    private static let maxCollectionCount: UInt64 = 65_536
+    /// The encoder refuses longer collections, so it never writes what the
+    /// decoder rejects.
+    public static let maxCollectionCount: UInt64 = 65_536
 
     private static func parseValue(_ data: Data, offset: inout Int, depth: Int = 0) throws -> CBORValue {
         guard depth < maxDepth else { throw DagCBORError.invalidCBOR }
@@ -208,16 +221,19 @@ public struct DagCBOR {
             writeUnsigned(UInt64(utf8.count), majorType: 3, to: &output)
             output.append(utf8)
         case .array(let array):
+            guard array.count <= maxCollectionCount else { throw DagCBORError.collectionTooLarge }
             writeUnsigned(UInt64(array.count), majorType: 4, to: &output)
             for element in array {
                 try serializeValue(element, to: &output)
             }
         case .map(let entries):
+            guard entries.count <= maxCollectionCount else { throw DagCBORError.collectionTooLarge }
+            // Canonical key order: shorter keys first, then bytewise.
             let sortedEntries = entries.sorted { a, b in
                 let aLen = a.0.utf8.count
                 let bLen = b.0.utf8.count
                 if aLen != bLen { return aLen < bLen }
-                return a.0 < b.0
+                return a.0.utf8.lexicographicallyPrecedes(b.0.utf8)
             }
             writeUnsigned(UInt64(sortedEntries.count), majorType: 5, to: &output)
             for (key, value) in sortedEntries {
@@ -298,13 +314,13 @@ private final class CBOREncodingStorage {
     func appendChild(codingPath: [CodingKey]) -> CBOREncodingStorage {
         beginArray(codingPath: codingPath)
         let child = CBOREncodingStorage()
-        switch kind {
-        case .array(var children):
-            children.append(child)
-            kind = .array(children)
-        default:
+        guard case .array(var children) = kind else {
             child.error = error
+            return child
         }
+        kind = .empty  // release the storage so the append is in place
+        children.append(child)
+        kind = .array(children)
         return child
     }
 
@@ -326,13 +342,13 @@ private final class CBOREncodingStorage {
 
     func setMapChild(_ key: String, child: CBOREncodingStorage, codingPath: [CodingKey]) {
         beginMap(codingPath: codingPath)
-        switch kind {
-        case .map(var children):
-            children[key] = child
-            kind = .map(children)
-        default:
+        guard case .map(var children) = kind else {
             child.error = error
+            return
         }
+        kind = .empty  // release the storage so the insert is in place
+        children[key] = child
+        kind = .map(children)
     }
 
     func toCBORValue() throws -> DagCBOR.CBORValue {

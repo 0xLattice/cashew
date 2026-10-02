@@ -74,6 +74,40 @@ struct FlatDictionaryTests {
     }
 }
 
+@Suite("DAG-CBOR encoding is linear in collection size")
+struct EncoderScalingTests {
+    /// Best of three runs, in seconds.
+    func seconds(_ body: () throws -> Void) rethrows -> Double {
+        var best = Double.infinity
+        for _ in 0..<3 {
+            let start = DispatchTime.now().uptimeNanoseconds
+            try body()
+            best = min(best, Double(DispatchTime.now().uptimeNanoseconds - start) / 1e9)
+        }
+        return best
+    }
+
+    @Test("8x the elements costs far less than 64x the time, for arrays and maps")
+    func testEncodeScalesLinearly() throws {
+        let large = Int(DagCBOR.maxCollectionCount)
+        let small = large / 8
+        let array = { (n: Int) in [Int](repeating: 0, count: n) }
+        let map = { (n: Int) in Dictionary(uniqueKeysWithValues: (0..<n).map { ("k\($0)", 0) }) }
+
+        let smallArray = array(small), largeArray = array(large)
+        let arrayRatio = try seconds { _ = try DagCBOR.encode(largeArray) }
+            / seconds { _ = try DagCBOR.encode(smallArray) }
+        let smallMap = map(small), largeMap = map(large)
+        let mapRatio = try seconds { _ = try DagCBOR.encode(largeMap) }
+            / seconds { _ = try DagCBOR.encode(smallMap) }
+
+        // Linear is ~8x; the old copy-per-append encoder was ~64x.
+        #expect(arrayRatio < 24, "array encode ratio \(arrayRatio)")
+        #expect(mapRatio < 24, "map encode ratio \(mapRatio)")
+        #expect(try seconds { _ = try DagCBOR.encode(largeArray) } < 1)
+    }
+}
+
 /// Every second spelling of a value is refused: the decoder accepts bytes
 /// only if they are exactly what the decoded value encodes to.
 @Suite("DAG-CBOR decodes only canonical bytes")

@@ -314,13 +314,13 @@ private final class CBOREncodingStorage {
     func appendChild(codingPath: [CodingKey]) -> CBOREncodingStorage {
         beginArray(codingPath: codingPath)
         let child = CBOREncodingStorage()
-        switch kind {
-        case .array(var children):
-            children.append(child)
-            kind = .array(children)
-        default:
+        guard case .array(var children) = kind else {
             child.error = error
+            return child
         }
+        kind = .empty  // release the storage so the append is in place
+        children.append(child)
+        kind = .array(children)
         return child
     }
 
@@ -342,13 +342,13 @@ private final class CBOREncodingStorage {
 
     func setMapChild(_ key: String, child: CBOREncodingStorage, codingPath: [CodingKey]) {
         beginMap(codingPath: codingPath)
-        switch kind {
-        case .map(var children):
-            children[key] = child
-            kind = .map(children)
-        default:
+        guard case .map(var children) = kind else {
             child.error = error
+            return
         }
+        kind = .empty  // release the storage so the insert is in place
+        children[key] = child
+        kind = .map(children)
     }
 
     func toCBORValue() throws -> DagCBOR.CBORValue {

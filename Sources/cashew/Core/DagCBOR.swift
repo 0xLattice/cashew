@@ -46,7 +46,16 @@ public struct DagCBOR {
     private static let maxDepth = 64
     /// Maximum number of elements in a single CBOR array or map. Prevents
     /// Int(UInt64) overflow on reserveCapacity and OOM from huge counts.
-    private static let maxCollectionCount: UInt64 = 65_536
+    /// Public so that callers can refuse to build what no decoder will read.
+    public static let maxCollectionCount: UInt64 = 65_536
+
+    /// DAG-CBOR's canonical map-key order: shorter keys first, then bytewise.
+    static func keyPrecedes(_ a: String, _ b: String) -> Bool {
+        let aLen = a.utf8.count
+        let bLen = b.utf8.count
+        if aLen != bLen { return aLen < bLen }
+        return a.utf8.lexicographicallyPrecedes(b.utf8)
+    }
 
     private static func parseValue(_ data: Data, offset: inout Int, depth: Int = 0) throws -> CBORValue {
         guard depth < maxDepth else { throw DagCBORError.invalidCBOR }
@@ -97,6 +106,10 @@ public struct DagCBOR {
             for _ in 0..<count {
                 let key = try parseValue(data, offset: &offset, depth: depth + 1)
                 guard case .string(let keyStr) = key else { throw DagCBORError.invalidCBOR }
+                // Strictly ascending canonical order: one map, one byte form.
+                if let previous = entries.last?.0, !keyPrecedes(previous, keyStr) {
+                    throw DagCBORError.invalidCBOR
+                }
                 let value = try parseValue(data, offset: &offset, depth: depth + 1)
                 entries.append((keyStr, value))
             }
@@ -213,12 +226,7 @@ public struct DagCBOR {
                 try serializeValue(element, to: &output)
             }
         case .map(let entries):
-            let sortedEntries = entries.sorted { a, b in
-                let aLen = a.0.utf8.count
-                let bLen = b.0.utf8.count
-                if aLen != bLen { return aLen < bLen }
-                return a.0 < b.0
-            }
+            let sortedEntries = entries.sorted { keyPrecedes($0.0, $1.0) }
             writeUnsigned(UInt64(sortedEntries.count), majorType: 5, to: &output)
             for (key, value) in sortedEntries {
                 let keyBytes = Data(key.utf8)
@@ -725,6 +733,8 @@ private struct DagCBORDecoder: Decoder {
         for (key, value) in entries {
             values[key] = value
         }
+        // Distinct bytes can still be one Swift String (canonical equivalence).
+        guard values.count == entries.count else { throw DagCBORError.invalidCBOR }
         return KeyedDecodingContainer(CBORKeyedDecodingContainer<Key>(
             values: values,
             codingPath: codingPath

@@ -1,7 +1,7 @@
 /// A flat map of references in one node: each key names a child header.
 ///
-/// Encoded as a plain DAG-CBOR map, whose canonical key order the decoder
-/// enforces, so one map has one byte form and one CID.
+/// Encoded as a plain DAG-CBOR map; the decoder accepts only its canonical
+/// bytes, so one map has one CID.
 public struct FlatDictionary<Value: Header>: Node {
     public var entries: [String: Value]
 
@@ -26,7 +26,9 @@ public struct FlatDictionary<Value: Header>: Node {
     public func set(properties: [PathSegment: any Header]) -> Self {
         var updated = entries
         for (key, header) in properties {
-            guard let child = header as? Value else { continue }
+            guard let child = header as? Value else {
+                preconditionFailure("FlatDictionary<\(Value.self)> given a \(type(of: header)) at '\(key)'")
+            }
             updated[key] = child
         }
         return Self(updated)

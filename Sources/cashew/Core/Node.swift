@@ -48,13 +48,8 @@ private let sharedJSONEncoder: JSONEncoder = {
 
 public extension Node {
     init?(data: Data) {
-       if let decoded = try? DagCBOR.decode(Self.self, from: data) {
-           self = decoded
-       } else if let decoded = try? sharedJSONDecoder.decode(Self.self, from: data) {
-           self = decoded
-       } else {
-           return nil
-       }
+        guard let decoded = try? DagCBOR.decode(Self.self, from: data) else { return nil }
+        self = decoded
     }
 
     func toData() -> Data? {
@@ -65,9 +60,10 @@ public extension Node {
         return try? sharedJSONEncoder.encode(self)
     }
 
+    /// The inverse of `description` (JSON text, for display), never of
+    /// stored bytes: content decodes through `init?(data:)`, DAG-CBOR only.
     init?(_ description: String) {
-        guard let data = description.data(using: .utf8) else { return nil }
-        guard let newNode = Self(data: data) else { return nil }
+        guard let newNode = try? sharedJSONDecoder.decode(Self.self, from: Data(description.utf8)) else { return nil }
         self = newNode
     }
 

@@ -61,8 +61,9 @@ public extension RadixNode {
                 return try collapsed(prefix: prefix, children: newChildren)
             case .insert(let newValue):
                 if value != nil { throw TransformErrors.transformFailed("cannot insert: value already exists at prefix '\(prefix)'") }
+                let newChildren = try transformChildren(transforms: traversedChild, keyProvider: keyProvider)
                 guard let newValue = ValueType(newValue) else { throw TransformErrors.transformFailed("failed to parse insert value at prefix '\(prefix)'") }
-                return Self(prefix: prefix, value: newValue, children: children)
+                return Self(prefix: prefix, value: newValue, children: newChildren)
             }
         }
 
@@ -315,8 +316,9 @@ extension RadixNode where ValueType: Header, ValueType.NodeType: MerkleDictionar
                 return try collapsed(prefix: prefix, children: newChildren)
             case .insert(let newValue):
                 if value != nil { throw TransformErrors.transformFailed("cannot insert: value already exists at prefix '\(prefix)' in Header transformExactMatch") }
+                let newChildren = try transformChildren(transforms: traversedChild, keyProvider: keyProvider)
                 guard let newValue = ValueType(newValue) else { throw TransformErrors.transformFailed("failed to parse insert value at prefix '\(prefix)' in Header transformExactMatch") }
-                return Self(prefix: prefix, value: newValue, children: children)
+                return Self(prefix: prefix, value: newValue, children: newChildren)
             }
         }
 

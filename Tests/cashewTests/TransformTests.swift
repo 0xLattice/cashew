@@ -838,6 +838,56 @@ struct RadixTrieMaintenanceTests {
         #expect(backToEmpty.count == 0)
         #expect(try HeaderImpl(node: backToEmpty).rawCID == emptyCID)
     }
+
+    // "ab" is a value-less branch point over "ab1" and "ab2". Inserting
+    // there must still apply the batch's writes beneath it.
+    @Test("Insert at a value-less branch point applies writes beneath it")
+    func testInsertAtBranchPointAppliesWritesBeneath() throws {
+        let dict = try MerkleDictionaryImpl<String>(children: [:], count: 0)
+            .inserting(key: "ab1", value: "100")
+            .inserting(key: "ab2", value: "50")
+
+        var transforms = ArrayTrie<Transform>()
+        transforms.set(["ab"], value: .insert("1"))
+        transforms.set(["ab1"], value: .update("40"))
+        transforms.set(["ab2"], value: .delete)
+        transforms.set(["ab3"], value: .insert("7"))
+
+        let result = try dict.transform(transforms: transforms)!
+        let expected = try MerkleDictionaryImpl<String>(children: [:], count: 0)
+            .inserting(key: "ab", value: "1")
+            .inserting(key: "ab1", value: "40")
+            .inserting(key: "ab3", value: "7")
+        #expect(try result.get(key: "ab1") == "40")
+        #expect(try result.get(key: "ab2") == nil)
+        #expect(result.count == 3)
+        #expect(try HeaderImpl(node: result).rawCID == (try HeaderImpl(node: expected).rawCID))
+    }
+
+    @Test("Header-valued insert at a value-less branch point applies writes beneath it")
+    func testHeaderInsertAtBranchPointAppliesWritesBeneath() throws {
+        typealias LeafDict = MerkleDictionaryImpl<String>
+        typealias OuterDict = MerkleDictionaryImpl<HeaderImpl<LeafDict>>
+        func leaf(_ v: String) throws -> HeaderImpl<LeafDict> {
+            try HeaderImpl(node: LeafDict(children: [:], count: 0).inserting(key: "balance", value: v))
+        }
+
+        let dict = try OuterDict(children: [:], count: 0)
+            .inserting(key: "ab1", value: leaf("100"))
+            .inserting(key: "ab2", value: leaf("50"))
+
+        var transforms = ArrayTrie<Transform>()
+        transforms.set(["ab"], value: .insert(try leaf("1").description))
+        transforms.set(["ab1", "balance"], value: .update("40"))
+
+        let result = try dict.transform(transforms: transforms)!
+        let expected = try OuterDict(children: [:], count: 0)
+            .inserting(key: "ab", value: leaf("1"))
+            .inserting(key: "ab1", value: leaf("40"))
+            .inserting(key: "ab2", value: leaf("50"))
+        #expect(try result.get(key: "ab1")?.node?.get(key: "balance") == "40")
+        #expect(try HeaderImpl(node: result).rawCID == (try HeaderImpl(node: expected).rawCID))
+    }
 }
 
 // MARK: - Bulk Transforms

@@ -66,12 +66,12 @@ public extension RadixNode {
                 group.addTask {
                     let paths = box.value
                     guard let child = children[childKey] else {
-                        guard let childPath = paths.traverseChild(childKey) else { return nil }
+                        guard let childPath = paths.childPaths(childKey) else { return nil }
                         let allChildValues = Set(childPath.allValues())
                         if allChildValues.contains(.deletion) || allChildValues.contains(.mutation) { throw ProofErrors.invalidProofType("deletion/mutation proof on non-existent child '\(childKey)'") }
                         return nil
                     }
-                    guard let childTraversal = paths.traverseChild(childKey) else {
+                    guard let childTraversal = paths.childPaths(childKey) else {
                         return (childKey, child)
                     }
                     if childTraversal.isEmpty {
@@ -121,5 +121,13 @@ public extension RadixNode {
             return result
         }
         return Self(prefix: prefix, value: value, children: newChildren)
+    }
+}
+
+private extension ArrayTrie<SparseMerkleProof> {
+    /// `traverseChild` keeps this node's own proof in the trie it returns; a
+    /// child must be proven against only the paths beneath it.
+    func childPaths(_ char: Character) -> Self? {
+        traverseChild(char)?.deleting(path: []).deleting(path: [""])
     }
 }

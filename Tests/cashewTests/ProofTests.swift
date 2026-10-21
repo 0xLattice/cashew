@@ -1047,5 +1047,73 @@ struct ProofTests {
             let sameHeader = try HeaderImpl(node: sameDict)
             #expect(try HeaderImpl(node: afterDelete).rawCID == sameHeader.rawCID)
         }
+
+        enum Change: Sendable { case insert(String), update(String), delete }
+
+        // A proof on key K must not constrain keys that merely extend K: the
+        // parent's proof type belongs to K alone, not to its radix children.
+        @Test("Proof on a key alongside a proof on a key it prefixes", arguments: [
+            // (existing entries, proofs + transforms)
+            ([("p/al", "v")], [("p/al", Change.update("w")), ("p/al/c", .insert("x"))]),
+            ([("p/al", "v"), ("p/al/d", "d")], [("p/al", Change.update("w")), ("p/al/c", .insert("x"))]),
+            ([("p/al", "v"), ("p/al/d", "d")], [("p/al", Change.update("v")), ("p/al/c", .insert("x"))]),
+            ([("p/al", "v"), ("p/al/d", "d")], [("p/al", Change.delete), ("p/al/c", .insert("x"))]),
+            ([("p/al", "v")], [("p/al", Change.delete), ("p/al/c", .insert("x"))]),
+            ([("ab", "v"), ("abd", "d")], [("ab", Change.update("w")), ("abc", .insert("x"))]),
+            ([("ab", "v"), ("abd", "d")], [("ab", Change.update("w")), ("abd", .update("e"))]),
+        ])
+        func testProofOnKeyAndExtendingKey(existing: [(String, String)], changes: [(String, Change)]) async throws {
+            var dict = MerkleDictionaryImpl<String>(children: [:], count: 0)
+            for (k, v) in existing { dict = try dict.inserting(key: k, value: v) }
+            let header = try HeaderImpl(node: dict)
+            let fetcher = TestStoreFetcher()
+            try await header.storeAsVolume(storer: fetcher)
+
+            var paths = ArrayTrie<SparseMerkleProof>()
+            var transforms = ArrayTrie<Transform>()
+            var expected = dict
+            for (k, change) in changes {
+                switch change {
+                case .insert(let v):
+                    paths.set([k], value: .insertion)
+                    transforms.set([k], value: .insert(v))
+                    expected = try expected.inserting(key: k, value: v)
+                case .update(let v):
+                    paths.set([k], value: .mutation)
+                    transforms.set([k], value: .update(v))
+                    expected = try expected.mutating(key: k, value: v)
+                case .delete:
+                    paths.set([k], value: .deletion)
+                    transforms.set([k], value: .delete)
+                    expected = try expected.deleting(key: k)
+                }
+            }
+
+            let unresolved = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: header.rawCID)
+            let proven = try await unresolved.proof(paths: paths, fetcher: fetcher)
+            let result = try proven.transform(transforms: transforms)!
+            #expect(result.rawCID == (try HeaderImpl(node: expected).rawCID))
+        }
+
+        @Test("Mutation on a missing key is still refused beside a proof on its prefix", arguments: [
+            [("p/al", SparseMerkleProof.mutation), ("p/al/c", .mutation)],
+            [("p/al", SparseMerkleProof.mutation), ("p/al/c", .deletion)],
+            [("p/al", SparseMerkleProof.deletion), ("p/al/d/x", .mutation)],
+        ])
+        func testMissingExtendingKeyStillRefused(proofs: [(String, SparseMerkleProof)]) async throws {
+            let dict = try MerkleDictionaryImpl<String>(children: [:], count: 0)
+                .inserting(key: "p/al", value: "v")
+                .inserting(key: "p/al/d", value: "d")
+            let header = try HeaderImpl(node: dict)
+            let fetcher = TestStoreFetcher()
+            try await header.storeAsVolume(storer: fetcher)
+
+            var paths = ArrayTrie<SparseMerkleProof>()
+            for (k, proof) in proofs { paths.set([k], value: proof) }
+            let unresolved = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: header.rawCID)
+            await #expect(throws: ProofErrors.self) {
+                _ = try await unresolved.proof(paths: paths, fetcher: fetcher)
+            }
+        }
     }
 }

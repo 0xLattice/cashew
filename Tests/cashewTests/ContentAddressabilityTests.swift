@@ -21,10 +21,10 @@ struct ContentAddressabilityTests {
         #expect(VolumeImpl<TestScalar>(rawCID: alternate).rawCID == canonical)
     }
 
-    @Test("Verification honors a CID's declared digest length")
-    func testTruncatedMultihashVerification() throws {
+    @Test("A full SHA-256 digest authenticates exactly its content")
+    func testFullSHA256Verification() throws {
         let data = Data("content-addressed payload".utf8)
-        let multihash = try Multihash(raw: data, hashedWith: .sha2_256, customByteLength: 16)
+        let multihash = try Multihash(raw: data, hashedWith: .sha2_256)
         let cid = try CID(version: .v1, codec: .raw, multihash: multihash).toBaseEncodedString
 
         try verifyContentAddress(data, matches: cid)
@@ -34,16 +34,20 @@ struct ContentAddressabilityTests {
         }
     }
 
-    @Test("Identity multihashes require the complete payload")
-    func testIdentityMultihashVerificationIsExact() throws {
-        let data = Data("inline".utf8)
-        let multihash = try Multihash(raw: data, hashedWith: .identity)
-        let cid = try CID(version: .v1, codec: .raw, multihash: multihash).toBaseEncodedString
+    // A weak or truncated digest lets one CID name several byte strings, so
+    // two fetchers could decode different nodes under one reference. Such a
+    // CID authenticates nothing, not even its own content.
+    @Test("Only full SHA-256 digests authenticate content")
+    func testOtherMultihashesAreRejected() throws {
+        let data = Data("content-addressed payload".utf8)
+        let multihashes: [(Codecs, Int?)] = [(.sha2_256, 16), (.sha2_256, 1), (.sha2_512, nil), (.identity, nil)]
+        for (algorithm, length) in multihashes {
+            let multihash = try Multihash(raw: data, hashedWith: algorithm, customByteLength: length)
+            let cid = try CID(version: .v1, codec: .raw, multihash: multihash).toBaseEncodedString
 
-        try verifyContentAddress(data, matches: cid)
-
-        #expect(throws: DataErrors.cidMismatch) {
-            try verifyContentAddress(data + Data([0]), matches: cid)
+            #expect(throws: DataErrors.cidCreationFailed) {
+                try verifyContentAddress(data, matches: cid)
+            }
         }
     }
 

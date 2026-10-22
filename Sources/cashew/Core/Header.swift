@@ -202,18 +202,16 @@ public extension Header {
     }
 }
 
+/// Only a full SHA-256 digest authenticates content: a weak or truncated
+/// digest lets one CID name several byte strings, so different fetchers could
+/// decode different nodes under the same reference.
 func verifyContentAddress(_ data: Data, matches rawCID: String) throws {
     let expectedCID = try CID(rawCID)
-    guard let hashAlgorithm = expectedCID.multihash.algorithm,
-          let digestLength = expectedCID.multihash.length,
-          digestLength > 0 else {
+    guard expectedCID.multihash.algorithm == .sha2_256,
+          expectedCID.multihash.length == 32 else {
         throw DataErrors.cidCreationFailed
     }
-    let actualMultihash = try Multihash(
-        raw: data,
-        hashedWith: hashAlgorithm,
-        customByteLength: hashAlgorithm == .identity ? nil : digestLength
-    )
+    let actualMultihash = try Multihash(raw: data, hashedWith: .sha2_256)
     let actualCID = try CID(
         version: expectedCID.version,
         codec: expectedCID.codec,

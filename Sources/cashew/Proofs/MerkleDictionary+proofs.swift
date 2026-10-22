@@ -2,6 +2,7 @@ import ArrayTrie
 
 public extension MerkleDictionary {
     func proof(paths: ArrayTrie<SparseMerkleProof>, fetcher: Fetcher) async throws -> Self {
+        if paths.traverse([""]) != nil { throw ProofErrors.invalidProofType("proof on the empty key") }
         return try await proofForChildren(paths: paths, fetcher: fetcher)
     }
 

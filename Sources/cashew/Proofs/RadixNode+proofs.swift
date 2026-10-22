@@ -9,7 +9,10 @@ public extension RadixNode {
         }
         let values = Set(paths.valuesExcludingPrefix(prefix))
         if values.contains(.deletion) || values.contains(.mutation) { throw ProofErrors.invalidProofType("deletion/mutation proof outside prefix '\(prefix)'") }
-        guard let proofAtNode = traversedPrefix.get([""]) else {
+        // An existence proof leaves this node's value as it is, so the node can
+        // collapse under a batched delete exactly as an unproven one can.
+        let proofAtNode = traversedPrefix.get([""])
+        guard let proofAtNode, proofAtNode != .existence else {
             // Batched deletes only need collapse witnesses at levels where the
             // batch could remove all but one child branch. Avoid resolving
             // child subtrees just to prove they disappear; this cheap local
@@ -46,7 +49,8 @@ public extension RadixNode {
                 survivingChildren += 1
                 continue
             }
-            let childValues = childPath.allValues()
+            // An existence proof changes nothing, so it cannot keep a child alive.
+            let childValues = childPath.allValues().filter { $0 != .existence }
             let hasDeletion = childValues.contains(.deletion)
             let fullyDeletesChild = hasDeletion && childValues.allSatisfy { $0 == .deletion }
             if fullyDeletesChild {

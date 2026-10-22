@@ -2,6 +2,9 @@ import ArrayTrie
 
 public extension MerkleDictionary {
     func transform(transforms: ArrayTrie<Transform>, keyProvider: KeyProvider?) throws -> Self? {
+        // No entry can live at the empty key: the children are keyed by a
+        // first character, so a write there would move `count` and nothing else.
+        if transforms.traverse([""]) != nil { throw TransformErrors.invalidKey("empty key") }
         let values = transforms.childValues()
         var delta = 0
         for value in values {

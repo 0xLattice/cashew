@@ -1,13 +1,13 @@
 {
-  "originHash" : "9e2469bd66cfe8d958b4088b04899144bdd2bf4c93189b4d639cc6f4bef38721",
+  "originHash" : "007e60547337ca12d99f5ba7fb97da485480c831ae3f3c2f6a949d3d47406682",
   "pins" : [
     {
       "identity" : "arraytrie",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/adalinxx/ArrayTrie.git",
       "state" : {
-        "revision" : "2d512cb4fb58696bb79200a699801f92d267dcf9",
-        "version" : "1.0.0"
+        "revision" : "8f8d3aacbd86999fffeebd60a0e89a423a41a8dc",
+        "version" : "1.0.1"
       }
     },
     {

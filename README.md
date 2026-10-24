@@ -140,6 +140,8 @@ The library also supports batch transforms, `MerkleArray` range queries, `Merkle
 
 ## Documentation
 
+Published at [lattice.build/docs](https://lattice.build/docs/protocol/cashew/) from the files below.
+
 - [Architecture](docs/architecture.md) — how cashew is built: the `Node`/`Header` model, content-addressing and CID generation, resolution and the fetcher/storer boundary, volumes, encryption, and the query execution model.
 - [Data structures](docs/data-structures.md) — the data-structure, proof, and query specification: the radix trie, `MerkleDictionary`/`MerkleArray`/`MerkleSet`, resolution strategies, sparse Merkle proofs, transforms, and diffing.
 

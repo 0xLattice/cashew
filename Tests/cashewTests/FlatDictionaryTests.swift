@@ -2,6 +2,7 @@ import Testing
 import Foundation
 import CID
 import Multibase
+import Multihash
 @testable import cashew
 
 @Suite("FlatDictionary and strict DAG-CBOR maps")
@@ -70,6 +71,48 @@ struct FlatDictionaryTests {
         #expect(throws: DagCBORError.self) { try DagCBOR.decode([Int].self, from: array(count: limit + 1)) }
         #expect(throws: DagCBORError.collectionTooLarge) {
             try DagCBOR.encode([Int](repeating: 0, count: Int(limit) + 1))
+        }
+    }
+
+    /// A child index naming two children under one key would let one CID
+    /// place one grind at two blocks of the same chain. Strict decoding is the
+    /// only thing that refuses it: the parser keeps both entries and the keyed
+    /// decoder keeps the last, so without the re-encode check this decodes.
+    @Test("A flat map naming two children under one key is refused, decoded or resolved by CID")
+    func testDuplicateChildKeyRefused() async throws {
+        let x = try ScalarHeader(node: TestScalar(val: 1))
+        let y = try ScalarHeader(node: TestScalar(val: 2))
+        let canonical = try DagCBOR.encode(FlatDictionary<ScalarHeader>(["d": x, "e": y]))
+
+        // Layout: map head | key "d" | X | key "e" | Y. Respell exactly the
+        // second key as "d", not a matching byte pair inside X.
+        let valueX = try DagCBOR.encode(x)
+        let second = canonical.startIndex + 3 + valueX.count
+        #expect(Data(canonical.prefix(3)) == Data([0xa2, 0x61, 0x64]))
+        #expect(Data(canonical[(canonical.startIndex + 3)..<second]) == valueX)
+        #expect(Data(canonical[second..<(second + 2)]) == Data([0x61, 0x65]))
+        var duplicate = canonical
+        duplicate[second + 1] = 0x64
+
+        #expect(throws: DagCBORError.nonCanonical) {
+            try DagCBOR.decode(FlatDictionary<ScalarHeader>.self, from: duplicate)
+        }
+
+        func cid(_ data: Data) throws -> String {
+            try CID(version: .v1, codec: .dag_cbor,
+                    multihash: Multihash(raw: data, hashedWith: .sha2_256)).toBaseEncodedString
+        }
+        #expect(try cid(canonical) == HeaderImpl(node: FlatDictionary<ScalarHeader>(["d": x, "e": y])).rawCID)
+        let source = InMemoryContentSource([
+            try cid(canonical): canonical,
+            try cid(duplicate): duplicate,
+        ])
+        let resolved = try await HeaderImpl<FlatDictionary<ScalarHeader>>(rawCID: cid(canonical))
+            .resolve(fetcher: source)
+        #expect(resolved.node?.entries.count == 2)
+        await #expect(throws: CashewDecodingError.decodeFromDataError) {
+            _ = try await HeaderImpl<FlatDictionary<ScalarHeader>>(rawCID: cid(duplicate))
+                .resolve(fetcher: source)
         }
     }
 }

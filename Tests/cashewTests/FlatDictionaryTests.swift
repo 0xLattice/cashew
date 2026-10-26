@@ -102,6 +102,7 @@ struct FlatDictionaryTests {
             try CID(version: .v1, codec: .dag_cbor,
                     multihash: Multihash(raw: data, hashedWith: .sha2_256)).toBaseEncodedString
         }
+        #expect(try cid(canonical) == HeaderImpl(node: FlatDictionary<ScalarHeader>(["d": x, "e": y])).rawCID)
         let source = InMemoryContentSource([
             try cid(canonical): canonical,
             try cid(duplicate): duplicate,

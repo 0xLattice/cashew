@@ -19,7 +19,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.4"),
-        .package(url: "https://github.com/adalinxx/ArrayTrie.git", from: "1.0.1"),
+        .package(url: "https://github.com/0xLattice/ArrayTrie.git", from: "1.0.1"),
         .package(url: "https://github.com/apple/swift-crypto.git", "1.0.0" ..< "4.0.0"),
         .package(url: "https://github.com/swift-libp2p/swift-cid.git", from: "0.0.1"),
         .package(url: "https://github.com/swift-libp2p/swift-multicodec.git", from: "0.0.1"),

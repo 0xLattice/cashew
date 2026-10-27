@@ -57,7 +57,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/adalinxx/cashew.git", from: "1.0.0")
+    .package(url: "https://github.com/0xLattice/cashew.git", from: "1.0.0")
 ]
 ```
 
@@ -151,7 +151,7 @@ All content-addressing primitives come from the [swift-libp2p](https://github.co
 
 | Package | Purpose |
 |---------|---------|
-| [ArrayTrie](https://github.com/adalinxx/ArrayTrie) | Path-based traversal of resolution/transform/proof specs |
+| [ArrayTrie](https://github.com/0xLattice/ArrayTrie) | Path-based traversal of resolution/transform/proof specs |
 | [swift-crypto](https://github.com/apple/swift-crypto) | SHA2-256 hashing and AES-GCM encryption |
 | [swift-cid](https://github.com/swift-libp2p/swift-cid) | IPFS CIDv1 content identifiers |
 | [swift-multicodec](https://github.com/swift-libp2p/swift-multicodec) | Codec identifiers (dag-json, dag-cbor) |

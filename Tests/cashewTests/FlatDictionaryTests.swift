@@ -223,7 +223,13 @@ struct CanonicalDecodeTests {
     @Test("A UTF-8 byte-order mark is not stripped into the same text")
     func testByteOrderMark() throws {
         #expect(try DagCBOR.encode(TextRecord(s: "a")) == Data([0xa1, 0x61, 0x73, 0x61, 0x61]))
-        rejects(TextRecord.self, Data([0xa1, 0x61, 0x73, 0x64, 0xef, 0xbb, 0xbf, 0x61]))
+        // U+FEFF is a character: these bytes spell a different text, not a
+        // second spelling of "a", and they decode the same on every host.
+        let marked = Data([0xa1, 0x61, 0x73, 0x64, 0xef, 0xbb, 0xbf, 0x61])
+        let decoded = try DagCBOR.decode(TextRecord.self, from: marked)
+        #expect(decoded.s == "\u{FEFF}a")
+        #expect(decoded.s != "a")
+        #expect(try DagCBOR.encode(decoded) == marked)
     }
 
     @Test("A CID in a non-canonical base")

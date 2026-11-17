@@ -88,7 +88,7 @@ public struct DagCBOR {
             guard len <= UInt64(data.count - offset) else { throw DagCBORError.unexpectedEnd }
             let safeLen = Int(len)
             let end = offset + safeLen
-            guard let str = String(data: data[offset..<end], encoding: .utf8) else {
+            guard let str = String(exactUTF8: data[offset..<end]) else {
                 throw DagCBORError.invalidCBOR
             }
             offset = end

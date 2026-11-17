@@ -8,13 +8,88 @@ import Crypto
 /// Returns the single storage-key spelling for a CID. Invalid placeholders are
 /// left unchanged; content verification still rejects them.
 func canonicalCID(_ rawCID: String) -> String {
+    // Already the canonical text of a dag-cbor sha2-256 CID: the parse and
+    // re-encode below would give back these exact bytes.
+    if isCanonicalDagCBORSHA256CID(rawCID) { return rawCID }
     guard let cid = try? CID(rawCID),
           let canonical = try? CID(
             version: cid.version,
             codec: cid.codec,
             multihash: cid.multihash
           ) else { return rawCID }
-    return canonical.toBaseEncodedString
+    return cidText(canonical)
+}
+
+/// The text of a CID built by `CID(version:codec:multihash:)`, which gives a
+/// v1 CID the base32 multibase: byte for byte `toBaseEncodedString`.
+func cidText(_ cid: CID) -> String {
+    cid.version == .v1 ? base32Multibase(cid.rawBuffer) : cid.toBaseEncodedString
+}
+
+private let base32Digits: StaticString = "abcdefghijklmnopqrstuvwxyz234567"
+
+/// Multibase base32: "b", then RFC 4648 base32, lowercase and unpadded — the
+/// text `CID.toBaseEncodedString` gives every v1 CID. Encoded here, straight
+/// into the string's storage, because the library's encoder pads and then
+/// strips the padding one character at a time.
+func base32Multibase(_ bytes: [UInt8]) -> String {
+    String(unsafeUninitializedCapacity: 1 + (bytes.count * 8 + 4) / 5) { out in
+        let digits = base32Digits.utf8Start
+        out[0] = UInt8(ascii: "b")
+        var position = 1
+        var buffer: UInt32 = 0
+        var bits = 0
+        for byte in bytes {
+            buffer = buffer << 8 | UInt32(byte)
+            bits += 8
+            while bits >= 5 {
+                bits -= 5
+                out[position] = digits[Int(buffer >> UInt32(bits) & 31)]
+                position += 1
+            }
+        }
+        if bits > 0 {
+            out[position] = digits[Int(buffer << UInt32(5 - bits) & 31)]
+            position += 1
+        }
+        return position
+    }
+}
+
+/// Whether `text` is the canonical text of a CIDv1, dag-cbor, sha2-256 CID
+/// with a 32-byte digest — "b", then the lowercase unpadded base32 of
+/// `01 71 12 20` and the digest, with the two bits past the last byte zero.
+/// No other text spells these bytes, and `canonicalCID` maps such text to
+/// itself.
+func isCanonicalDagCBORSHA256CID(_ text: String) -> Bool {
+    var text = text
+    return text.withUTF8 { utf8 in
+        // "b" and 58 digits: 36 bytes is 288 bits, 2 short of 58 digits.
+        guard utf8.count == 59, utf8[0] == UInt8(ascii: "b") else { return false }
+        var buffer: UInt32 = 0
+        var bits = 0
+        var index = 0
+        for position in 1..<59 {
+            let character = utf8[position]
+            let value: UInt32
+            switch character {
+            case UInt8(ascii: "a")...UInt8(ascii: "z"): value = UInt32(character &- UInt8(ascii: "a"))
+            case UInt8(ascii: "2")...UInt8(ascii: "7"): value = UInt32(character &- UInt8(ascii: "2")) &+ 26
+            default: return false
+            }
+            buffer = buffer << 5 | value
+            bits += 5
+            guard bits >= 8 else { continue }
+            bits -= 8
+            if index < 4 {
+                let byte = UInt8(truncatingIfNeeded: buffer >> UInt32(bits))
+                let prefix: UInt8 = index == 0 ? 0x01 : index == 1 ? 0x71 : index == 2 ? 0x12 : 0x20
+                guard byte == prefix else { return false }
+            }
+            index += 1
+        }
+        return index == 36 && bits == 2 && buffer & 0b11 == 0
+    }
 }
 
 /// A content-addressed reference to a ``Node``.
@@ -97,7 +172,7 @@ public extension Header {
         guard let data = node.toData() else { throw DataErrors.serializationFailed }
         let multihash = try Multihash(raw: data, hashedWith: .sha2_256)
         let cid = try CID(version: .v1, codec: codec, multihash: multihash)
-        return cid.toBaseEncodedString
+        return cidText(cid)
     }
 
     static func createSyncCID(for node: NodeType, codec: Codecs) throws -> String {

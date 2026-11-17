@@ -238,7 +238,10 @@ public extension Header {
 
     func fetchAndDecodeNode(fetcher: Fetcher) async throws -> NodeType {
         let fetchedData = try await fetcher.fetch(rawCid: rawCID)
-        try verifyData(fetchedData, matches: rawCID)
+        // A CachingFetcher hashed these bytes before caching them.
+        if !(fetcher is CachingFetcher) {
+            try verifyData(fetchedData, matches: rawCID)
+        }
         let decrypted = try decryptIfNeeded(data: fetchedData, fetcher: fetcher)
         guard let node = NodeType(data: decrypted) else { throw CashewDecodingError.decodeFromDataError }
         return node

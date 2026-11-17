@@ -14,6 +14,7 @@ struct CachingFetcher: Fetcher, KeyProvider {
 
     func fetch(rawCid: String) async throws -> Data {
         let data = try await fetcher.fetch(rawCid: rawCid)
+        // The only hash of these bytes: fetchAndDecodeNode skips its own.
         try verifyContentAddress(data, matches: rawCid)
         try await storer.store(entries: [rawCid: data])
         return data

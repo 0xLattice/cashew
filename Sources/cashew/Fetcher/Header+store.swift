@@ -17,7 +17,9 @@ private final class MaterializedHeaderFetcher: Fetcher, KeyProvider, @unchecked 
         guard let header = lock.withLock({ headers[rawCid] }) else {
             throw DataErrors.nodeNotAvailable
         }
-        let data = try header.verifiedSerializedDataForStorage(keyProvider: keyProvider)
+        // Unhashed: the resolve this feeds hashes it, and these entries are
+        // stored only once that resolve succeeds.
+        let data = try header.serializedDataForStorage(keyProvider: keyProvider)
         let children = header.materializedChildren()
         lock.withLock {
             fetchedEntries[rawCid] = data

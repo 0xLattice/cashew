@@ -45,7 +45,7 @@ public struct VolumeImpl<NodeType: Node>: Volume {
         let (encrypted, iv) = try EncryptionHelper.encrypt(data: plaintext, key: key)
         let multihash = try Multihash(raw: encrypted, hashedWith: .sha2_256)
         let cid = try CID(version: .v1, codec: Self.defaultCodec, multihash: multihash)
-        self.rawCID = cid.toBaseEncodedString
+        self.rawCID = cidText(cid)
         self.rawNode = Box(node)
         self.encryptionInfo = EncryptionInfo(key: key, iv: iv)
     }

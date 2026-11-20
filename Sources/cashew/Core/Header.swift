@@ -62,10 +62,18 @@ func base32Multibase(_ bytes: [UInt8]) -> String {
 /// No other text spells these bytes, and `canonicalCID` maps such text to
 /// itself.
 func isCanonicalDagCBORSHA256CID(_ text: String) -> Bool {
+    canonicalDagCBORSHA256Digest(text) != nil
+}
+
+/// The 32-byte digest `text` names when it is the canonical text of a CIDv1,
+/// dag-cbor, sha2-256 CID (see ``isCanonicalDagCBORSHA256CID(_:)``); nil for
+/// any other text.
+func canonicalDagCBORSHA256Digest(_ text: String) -> [UInt8]? {
     var text = text
     return text.withUTF8 { utf8 in
         // "b" and 58 digits: 36 bytes is 288 bits, 2 short of 58 digits.
-        guard utf8.count == 59, utf8[0] == UInt8(ascii: "b") else { return false }
+        guard utf8.count == 59, utf8[0] == UInt8(ascii: "b") else { return nil }
+        var digest = [UInt8](repeating: 0, count: 32)
         var buffer: UInt32 = 0
         var bits = 0
         var index = 0
@@ -75,20 +83,23 @@ func isCanonicalDagCBORSHA256CID(_ text: String) -> Bool {
             switch character {
             case UInt8(ascii: "a")...UInt8(ascii: "z"): value = UInt32(character &- UInt8(ascii: "a"))
             case UInt8(ascii: "2")...UInt8(ascii: "7"): value = UInt32(character &- UInt8(ascii: "2")) &+ 26
-            default: return false
+            default: return nil
             }
             buffer = buffer << 5 | value
             bits += 5
             guard bits >= 8 else { continue }
             bits -= 8
+            let byte = UInt8(truncatingIfNeeded: buffer >> UInt32(bits))
             if index < 4 {
-                let byte = UInt8(truncatingIfNeeded: buffer >> UInt32(bits))
                 let prefix: UInt8 = index == 0 ? 0x01 : index == 1 ? 0x71 : index == 2 ? 0x12 : 0x20
-                guard byte == prefix else { return false }
+                guard byte == prefix else { return nil }
+            } else {
+                digest[index - 4] = byte
             }
             index += 1
         }
-        return index == 36 && bits == 2 && buffer & 0b11 == 0
+        guard index == 36, bits == 2, buffer & 0b11 == 0 else { return nil }
+        return digest
     }
 }
 
@@ -284,6 +295,13 @@ public extension Header {
 /// digest lets one CID name several byte strings, so different fetchers could
 /// decode different nodes under the same reference.
 func verifyContentAddress(_ data: Data, matches rawCID: String) throws {
+    // The standard shape, spelled canonically: its text is its digest, so
+    // compare digests without parsing the CID. Any other text, including
+    // another spelling of the same CID, takes the general path.
+    if let digest = canonicalDagCBORSHA256Digest(rawCID) {
+        guard SHA256.hash(data: data).elementsEqual(digest) else { throw DataErrors.cidMismatch }
+        return
+    }
     let expectedCID = try CID(rawCID)
     guard expectedCID.multihash.algorithm == .sha2_256,
           expectedCID.multihash.length == 32 else {

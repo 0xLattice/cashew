@@ -12,7 +12,7 @@ public enum DagCBORError: Error {
 }
 
 public struct DagCBOR {
-    fileprivate enum CBORValue {
+    enum CBORValue {
         case uint(UInt64)
         case nint(UInt64)
         case string(String)
@@ -42,12 +42,39 @@ public struct DagCBOR {
     /// rule refuses every second spelling of a value (trailing bytes,
     /// non-minimal heads, unsorted or repeated keys, ignored fields, ...),
     /// so one value has one CID.
+    ///
+    /// The rule is checked in two halves, without writing the bytes again:
+    ///
+    /// - The spelling. While parsing, the parser notes any byte the encoder
+    ///   would not have written: a non-minimal head, a byte string, `undefined`,
+    ///   a half or single float, a map key not strictly after the one before
+    ///   it (shorter first, then bytewise), or bytes after the value. Bytes
+    ///   with none of these are exactly the encoding of the tree they parse to.
+    /// - The value. `T` may read less than the tree holds (an ignored field), or
+    ///   write back something other than what it read (an explicit null for an
+    ///   absent optional, a CID respelled, a `Float` narrowed). So `T` still
+    ///   encodes itself, and the tree it writes is compared with the parsed
+    ///   tree, node for node; it is never sorted or serialized.
+    ///
+    /// Bytes the parser noted, or a tree that does not match, take the full
+    /// re-encode and byte comparison, so a refusal is the same refusal, with
+    /// the same error, as comparing bytes would give.
     public static func decode<T: Codable>(_ type: T.Type, from data: Data) throws -> T {
-        var offset = 0
-        let value = try parseValue(data, offset: &offset)
-        let decoded = try T(from: DagCBORDecoder(value: value, codingPath: []))
+        var parser = Parser(data: data)
+        let value = try parser.parse()
+        let decoded = try decode(type, fromParsed: value)
+        if parser.isCanonical {
+            let root = CBOREncodingStorage()
+            try decoded.encode(to: DagCBOREncoder(storage: root, codingPath: []))
+            if root.matches(value) { return decoded }
+        }
         guard try encode(decoded) == data else { throw DagCBORError.nonCanonical }
         return decoded
+    }
+
+    /// Decodes `T` from an already parsed tree, with no canonical check.
+    static func decode<T: Decodable>(_ type: T.Type, fromParsed value: CBORValue) throws -> T {
+        try T(from: DagCBORDecoder(value: value, codingPath: []))
     }
 
     // MARK: - CBOR Parser
@@ -61,30 +88,135 @@ public struct DagCBOR {
     /// decoder rejects.
     public static let maxCollectionCount: UInt64 = 65_536
 
-    private static func parseValue(_ data: Data, offset: inout Int, depth: Int = 0) throws -> CBORValue {
-        guard depth < maxDepth else { throw DagCBORError.invalidCBOR }
-        guard offset < data.count else { throw DagCBORError.unexpectedEnd }
-        let initial = data[offset]
-        let majorType = initial >> 5
-        let additional = initial & 0x1f
-        offset += 1
+    /// The CBOR parser. Besides the tree, it reports whether `data` is spelled
+    /// exactly as ``serializeValue`` would write that tree.
+    struct Parser {
+        let data: Data
+        private var offset = 0
+        /// False once any byte is one the encoder would not have written.
+        private(set) var isCanonical = true
 
-        switch majorType {
-        case 0:
-            return try .uint(readArgument(additional, data: data, offset: &offset))
-        case 1:
-            return try .nint(readArgument(additional, data: data, offset: &offset))
-        case 2:
-            let len = try readArgument(additional, data: data, offset: &offset)
-            // Guard before Int() cast: UInt64 > Int.max traps; also ensure data exists.
-            guard len <= UInt64(data.count - offset) else { throw DagCBORError.unexpectedEnd }
-            let safeLen = Int(len)
-            let end = offset + safeLen
-            let bytes = Data(data[offset..<end])
-            offset = end
-            return .bytes(bytes)
-        case 3:
-            let len = try readArgument(additional, data: data, offset: &offset)
+        init(data: Data) {
+            self.data = data
+        }
+
+        /// The value at the start of `data`. Bytes after it are not an error
+        /// here, only non-canonical.
+        mutating func parse() throws -> CBORValue {
+            let value = try parseValue(depth: 0)
+            if offset != data.count { isCanonical = false }
+            return value
+        }
+
+        private mutating func parseValue(depth: Int) throws -> CBORValue {
+            guard depth < maxDepth else { throw DagCBORError.invalidCBOR }
+            guard offset < data.count else { throw DagCBORError.unexpectedEnd }
+            let initial = data[offset]
+            let majorType = initial >> 5
+            let additional = initial & 0x1f
+            offset += 1
+
+            switch majorType {
+            case 0:
+                return try .uint(readArgument(additional))
+            case 1:
+                return try .nint(readArgument(additional))
+            case 2:
+                // The encoder writes `Data` as base64 text, never as bytes.
+                isCanonical = false
+                let len = try readArgument(additional)
+                // Guard before Int() cast: UInt64 > Int.max traps; also ensure data exists.
+                guard len <= UInt64(data.count - offset) else { throw DagCBORError.unexpectedEnd }
+                let safeLen = Int(len)
+                let end = offset + safeLen
+                let bytes = Data(data[offset..<end])
+                offset = end
+                return .bytes(bytes)
+            case 3:
+                return try .string(readText(additional))
+            case 4:
+                let count = try readArgument(additional)
+                guard count <= maxCollectionCount else { throw DagCBORError.invalidCBOR }
+                var array: [CBORValue] = []
+                array.reserveCapacity(Int(count))
+                for _ in 0..<count {
+                    try array.append(parseValue(depth: depth + 1))
+                }
+                return .array(array)
+            case 5:
+                let count = try readArgument(additional)
+                guard count <= maxCollectionCount else { throw DagCBORError.invalidCBOR }
+                var entries: [(String, CBORValue)] = []
+                entries.reserveCapacity(Int(count))
+                for index in 0..<count {
+                    let key = try parseKey(depth: depth + 1)
+                    // Keys strictly ascending, shorter first, then bytewise:
+                    // the order the encoder sorts into, with no key twice.
+                    if index > 0, isCanonical, !keyPrecedes(entries[entries.count - 1].0, key) {
+                        isCanonical = false
+                    }
+                    let value = try parseValue(depth: depth + 1)
+                    entries.append((key, value))
+                }
+                return .map(entries)
+            case 7:
+                switch additional {
+                case 20: return .bool(false)
+                case 21: return .bool(true)
+                case 22: return .null
+                case 23:
+                    // `undefined` reads as null, which the encoder writes as 0xf6.
+                    isCanonical = false
+                    return .null
+                case 25:
+                    guard offset + 2 <= data.count else { throw DagCBORError.unexpectedEnd }
+                    let bits = UInt16(data[offset]) << 8 | UInt16(data[offset + 1])
+                    offset += 2
+                    // The encoder writes every float as a double.
+                    isCanonical = false
+                    return .double(float16ToDouble(bits))
+                case 26:
+                    guard offset + 4 <= data.count else { throw DagCBORError.unexpectedEnd }
+                    var bits: UInt32 = 0
+                    bits |= UInt32(data[offset]) << 24
+                    bits |= UInt32(data[offset + 1]) << 16
+                    bits |= UInt32(data[offset + 2]) << 8
+                    bits |= UInt32(data[offset + 3])
+                    offset += 4
+                    isCanonical = false
+                    return .double(Double(Float(bitPattern: bits)))
+                case 27:
+                    guard offset + 8 <= data.count else { throw DagCBORError.unexpectedEnd }
+                    var bits: UInt64 = 0
+                    for i in 0..<8 {
+                        bits |= UInt64(data[offset + i]) << (56 - i * 8)
+                    }
+                    offset += 8
+                    return .double(Double(bitPattern: bits))
+                default:
+                    throw DagCBORError.invalidCBOR
+                }
+            default:
+                throw DagCBORError.invalidCBOR
+            }
+        }
+
+        /// A map key: any value may stand here, but only text is accepted.
+        private mutating func parseKey(depth: Int) throws -> String {
+            guard depth < maxDepth else { throw DagCBORError.invalidCBOR }
+            guard offset < data.count else { throw DagCBORError.unexpectedEnd }
+            let initial = data[offset]
+            guard initial >> 5 == 3 else {
+                // Parse it for the same errors the value would give, then refuse it.
+                _ = try parseValue(depth: depth)
+                throw DagCBORError.invalidCBOR
+            }
+            offset += 1
+            return try readText(initial & 0x1f)
+        }
+
+        private mutating func readText(_ additional: UInt8) throws -> String {
+            let len = try readArgument(additional)
             guard len <= UInt64(data.count - offset) else { throw DagCBORError.unexpectedEnd }
             let safeLen = Int(len)
             let end = offset + safeLen
@@ -92,101 +224,63 @@ public struct DagCBOR {
                 throw DagCBORError.invalidCBOR
             }
             offset = end
-            return .string(str)
-        case 4:
-            let count = try readArgument(additional, data: data, offset: &offset)
-            guard count <= maxCollectionCount else { throw DagCBORError.invalidCBOR }
-            var array: [CBORValue] = []
-            array.reserveCapacity(Int(count))
-            for _ in 0..<count {
-                try array.append(parseValue(data, offset: &offset, depth: depth + 1))
+            return str
+        }
+
+        private mutating func readArgument(_ additional: UInt8) throws -> UInt64 {
+            if additional < 24 {
+                return UInt64(additional)
             }
-            return .array(array)
-        case 5:
-            let count = try readArgument(additional, data: data, offset: &offset)
-            guard count <= maxCollectionCount else { throw DagCBORError.invalidCBOR }
-            var entries: [(String, CBORValue)] = []
-            entries.reserveCapacity(Int(count))
-            for _ in 0..<count {
-                let key = try parseValue(data, offset: &offset, depth: depth + 1)
-                guard case .string(let keyStr) = key else { throw DagCBORError.invalidCBOR }
-                let value = try parseValue(data, offset: &offset, depth: depth + 1)
-                entries.append((keyStr, value))
-            }
-            return .map(entries)
-        case 7:
+            let value: UInt64
+            let smallest: UInt64
             switch additional {
-            case 20: return .bool(false)
-            case 21: return .bool(true)
-            case 22: return .null
-            case 23: return .null
+            case 24:
+                guard offset < data.count else { throw DagCBORError.unexpectedEnd }
+                value = UInt64(data[offset])
+                offset += 1
+                smallest = 24
             case 25:
                 guard offset + 2 <= data.count else { throw DagCBORError.unexpectedEnd }
-                let bits = UInt16(data[offset]) << 8 | UInt16(data[offset + 1])
+                value = UInt64(UInt16(data[offset]) << 8 | UInt16(data[offset + 1]))
                 offset += 2
-                return .double(float16ToDouble(bits))
+                smallest = UInt64(UInt8.max) + 1
             case 26:
                 guard offset + 4 <= data.count else { throw DagCBORError.unexpectedEnd }
-                var bits: UInt32 = 0
-                bits |= UInt32(data[offset]) << 24
-                bits |= UInt32(data[offset + 1]) << 16
-                bits |= UInt32(data[offset + 2]) << 8
-                bits |= UInt32(data[offset + 3])
+                var val: UInt32 = 0
+                for i in 0..<4 {
+                    val |= UInt32(data[offset + i]) << (24 - i * 8)
+                }
                 offset += 4
-                return .double(Double(Float(bitPattern: bits)))
+                value = UInt64(val)
+                smallest = UInt64(UInt16.max) + 1
             case 27:
                 guard offset + 8 <= data.count else { throw DagCBORError.unexpectedEnd }
-                var bits: UInt64 = 0
+                var val: UInt64 = 0
                 for i in 0..<8 {
-                    bits |= UInt64(data[offset + i]) << (56 - i * 8)
+                    val |= UInt64(data[offset + i]) << (56 - i * 8)
                 }
                 offset += 8
-                return .double(Double(bitPattern: bits))
+                value = val
+                smallest = UInt64(UInt32.max) + 1
             default:
                 throw DagCBORError.invalidCBOR
             }
-        default:
-            throw DagCBORError.invalidCBOR
+            // The encoder writes every argument in the fewest bytes that hold it.
+            if value < smallest { isCanonical = false }
+            return value
         }
     }
 
-    private static func readArgument(_ additional: UInt8, data: Data, offset: inout Int) throws -> UInt64 {
-        if additional < 24 {
-            return UInt64(additional)
-        }
-        switch additional {
-        case 24:
-            guard offset < data.count else { throw DagCBORError.unexpectedEnd }
-            let val = data[offset]
-            offset += 1
-            return UInt64(val)
-        case 25:
-            guard offset + 2 <= data.count else { throw DagCBORError.unexpectedEnd }
-            let val = UInt16(data[offset]) << 8 | UInt16(data[offset + 1])
-            offset += 2
-            return UInt64(val)
-        case 26:
-            guard offset + 4 <= data.count else { throw DagCBORError.unexpectedEnd }
-            var val: UInt32 = 0
-            for i in 0..<4 {
-                val |= UInt32(data[offset + i]) << (24 - i * 8)
-            }
-            offset += 4
-            return UInt64(val)
-        case 27:
-            guard offset + 8 <= data.count else { throw DagCBORError.unexpectedEnd }
-            var val: UInt64 = 0
-            for i in 0..<8 {
-                val |= UInt64(data[offset + i]) << (56 - i * 8)
-            }
-            offset += 8
-            return val
-        default:
-            throw DagCBORError.invalidCBOR
-        }
+    /// Whether `a` sorts strictly before `b` as map keys: shorter first, then
+    /// bytewise. The order ``serializeValue`` writes keys in.
+    static func keyPrecedes(_ a: String, _ b: String) -> Bool {
+        let aLen = a.utf8.count
+        let bLen = b.utf8.count
+        if aLen != bLen { return aLen < bLen }
+        return a.utf8.lexicographicallyPrecedes(b.utf8)
     }
 
-    private static func float16ToDouble(_ bits: UInt16) -> Double {
+    fileprivate static func float16ToDouble(_ bits: UInt16) -> Double {
         let sign = (bits >> 15) & 1
         let exp = (bits >> 10) & 0x1f
         let frac = bits & 0x3ff
@@ -276,7 +370,7 @@ public struct DagCBOR {
 
 // MARK: - Encoder
 
-private final class CBOREncodingStorage {
+final class CBOREncodingStorage {
     private enum Kind {
         case empty
         case value(DagCBOR.CBORValue)
@@ -365,6 +459,56 @@ private final class CBOREncodingStorage {
         }
     }
 
+    /// Whether this tree serializes to exactly the bytes `expected` was parsed
+    /// from, given those bytes are canonical (keys strictly ascending, each
+    /// once). True only when ``toCBORValue()`` would succeed and its
+    /// serialization would equal those bytes; false on any doubt, which the
+    /// caller settles by serializing and comparing.
+    func matches(_ expected: DagCBOR.CBORValue) -> Bool {
+        if error != nil { return false }
+        switch kind {
+        case .empty:
+            if case .null = expected { return true }
+            return false
+        case .value(let value):
+            return Self.scalar(value, matches: expected)
+        case .array(let children):
+            guard case .array(let items) = expected, items.count == children.count else { return false }
+            for index in children.indices where !children[index].matches(items[index]) {
+                return false
+            }
+            return true
+        case .map(let children):
+            // The expected keys are distinct byte strings in the order the
+            // serializer sorts into. Each must be one of these keys, byte for
+            // byte; with the counts equal, the two key sets are then the same.
+            guard case .map(let entries) = expected, entries.count == children.count else { return false }
+            for (key, item) in entries {
+                // Lookup is by String equality (canonical equivalence), so
+                // confirm the key found is spelled with the same bytes.
+                guard let index = children.index(forKey: key) else { return false }
+                let (childKey, child) = children[index]
+                guard childKey.utf8.elementsEqual(key.utf8), child.matches(item) else { return false }
+            }
+            return true
+        }
+    }
+
+    private static func scalar(_ value: DagCBOR.CBORValue, matches expected: DagCBOR.CBORValue) -> Bool {
+        switch (value, expected) {
+        case (.null, .null): return true
+        case (.bool(let a), .bool(let b)): return a == b
+        case (.uint(let a), .uint(let b)): return a == b
+        case (.nint(let a), .nint(let b)): return a == b
+        // Serialized as the bit pattern: compare that, not the number.
+        case (.double(let a), .double(let b)): return a.bitPattern == b.bitPattern
+        // Serialized as UTF-8: compare the bytes, not canonical equivalence.
+        case (.string(let a), .string(let b)): return a.utf8.elementsEqual(b.utf8)
+        // Containers are never set as one value; leave any to the byte comparison.
+        default: return false
+        }
+    }
+
     private func recordContainerError(_ description: String, codingPath: [CodingKey]) {
         if error == nil {
             error = EncodingError.invalidValue(description, EncodingError.Context(
@@ -375,7 +519,7 @@ private final class CBOREncodingStorage {
     }
 }
 
-private struct DagCBOREncoder: Encoder {
+struct DagCBOREncoder: Encoder {
     let storage: CBOREncodingStorage
     let codingPath: [CodingKey]
     let userInfo: [CodingUserInfoKey: Any] = [:]

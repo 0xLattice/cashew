@@ -1,5 +1,5 @@
 {
-  "originHash" : "e47cd2839c335fa2435a70643501e5a38aadea58c9aa901c2e5f4bdb9f9caf38",
+  "originHash" : "b6383ebf37270fbe7df4e4f8b6a3407318651306d9c9ea3667a24ac6ffeba578",
   "pins" : [
     {
       "identity" : "arraytrie",
@@ -24,7 +24,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/0xLattice/DagCBORKit.git",
       "state" : {
-        "revision" : "2dbe6190bd0087cb6fc445b084c8b5686670fbd4"
+        "revision" : "bc231618f918d34d0f8d465a7e6b7444daf5701f"
       }
     },
     {

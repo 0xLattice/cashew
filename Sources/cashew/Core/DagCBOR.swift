@@ -1,15 +1,5 @@
+@_exported import DagCBORKit
 import Foundation
-
-public enum DagCBORError: Error {
-    case unsupportedType
-    case integerOverflow
-    case unexpectedEnd
-    case invalidCBOR
-    /// The bytes decode, but are not the bytes their value encodes to.
-    case nonCanonical
-    /// An array or map longer than ``DagCBOR/maxCollectionCount``.
-    case collectionTooLarge
-}
 
 public struct DagCBOR {
     fileprivate enum CBORValue {
@@ -34,9 +24,7 @@ public struct DagCBOR {
     }
 
     @inlinable static func write<T, U: DagCBORCodable>(_ value: T, as _: U.Type) throws -> [UInt8] {
-        var writer = DagCBORWriter()
-        try (value as! U).writeDagCBOR(to: &writer)
-        return writer.bytes
+        try DagCBORCanonical.encode(value as! U)
     }
 
     /// `encode` through `Codable` alone, whether or not the type writes its
@@ -70,10 +58,7 @@ public struct DagCBOR {
     }
 
     @inlinable static func read<U: DagCBORCodable>(_ data: Data, as _: U.Type) throws -> U {
-        var reader = DagCBORReader(data)
-        let decoded = try U(dagCBOR: &reader)
-        guard try write(decoded, as: U.self) == reader.bytes else { throw DagCBORError.nonCanonical }
-        return decoded
+        try DagCBORCanonical.decode(U.self, from: data)
     }
 
     /// `decode` through `Codable` alone, whether or not the type reads its
@@ -93,10 +78,7 @@ public struct DagCBOR {
     /// Whether map key `a` sorts before `b` in the canonical order: shorter
     /// first, then bytewise.
     @inlinable public static func keyPrecedes(_ a: String, _ b: String) -> Bool {
-        let aLength = a.utf8.count
-        let bLength = b.utf8.count
-        if aLength != bLength { return aLength < bLength }
-        return a.utf8.lexicographicallyPrecedes(b.utf8)
+        DagCBORCanonical.keyPrecedes(a, b)
     }
 
     // MARK: - CBOR Parser
@@ -104,11 +86,8 @@ public struct DagCBOR {
     /// Maximum nesting depth for CBOR arrays and maps. Deeper structures are
     /// rejected to prevent stack overflow from recursive parseValue calls.
     private static let maxDepth = 64
-    /// Maximum number of elements in a single CBOR array or map. Prevents
-    /// Int(UInt64) overflow on reserveCapacity and OOM from huge counts.
-    /// The encoder refuses longer collections, so it never writes what the
-    /// decoder rejects.
-    public static let maxCollectionCount: UInt64 = 65_536
+    /// The most elements an array or map may hold (``DagCBORCanonical/maxCollectionCount``).
+    public static let maxCollectionCount = DagCBORCanonical.maxCollectionCount
 
     private static func parseValue(_ data: Data, offset: inout Int, depth: Int = 0) throws -> CBORValue {
         guard depth < maxDepth else { throw DagCBORError.invalidCBOR }

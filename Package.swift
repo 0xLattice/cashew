@@ -24,6 +24,7 @@ let package = Package(
         .package(url: "https://github.com/swift-libp2p/swift-cid.git", from: "0.0.1"),
         .package(url: "https://github.com/swift-libp2p/swift-multicodec.git", from: "0.0.1"),
         .package(url: "https://github.com/swift-libp2p/swift-multihash.git", from: "0.0.1"),
+        .package(url: "https://github.com/0xLattice/DagCBORKit.git", exact: "1.0.0"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -36,7 +37,8 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "CID", package: "swift-cid"),
                 .product(name: "Multicodec", package: "swift-multicodec"),
-                .product(name: "Multihash", package: "swift-multihash")],
+                .product(name: "Multihash", package: "swift-multihash"),
+                .product(name: "DagCBORKit", package: "DagCBORKit")],
             exclude: ["Encryption/README.md"]),
         .testTarget(
             name: "cashewTests",

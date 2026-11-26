@@ -1,28 +1,10 @@
-# Cashew
+# cashew
 
-A Swift library for **content-addressed storage** — versioned, tamper-evident key-value stores where data can live anywhere and load on demand. Every value is an immutable Merkle radix trie addressed by the hash of its content (a CID); every "write" produces a new root, while unchanged branches share structure with prior versions.
-
-## What problem it solves
-
-Most key-value stores treat data as a mutable blob. Cashew treats data as an immutable, content-addressed Merkle radix trie. This gives you three things traditional stores don't:
-
-- **Verifiable integrity** — the CID is a SHA2-256 hash of the data's deterministic serialization. Same content always produces the same CID; change anything and the CID changes.
-- **Lazy loading** — a node can exist as a CID-only reference and resolve its data on demand from any content-addressable backend (IPFS, a database, a filesystem, a peer).
-- **Efficient proofs** — prove a key exists or doesn't without revealing the whole dataset.
-
-### Good fit
-
-- Content-addressable storage backends (IPFS, CAS databases)
-- Versioned state where every mutation must be auditable
-- Distributed systems exchanging tamper-evident data with locality hints
-- Selective encryption — some fields public, some private, same structure
-- Sparse proofs over specific keys without the full dataset
-
-### Not a fit
-
-- High-throughput mutable key-value stores (Cashew is immutable; every write allocates)
-- Data that doesn't need content addressing or integrity guarantees
-- Simple in-memory caches where a `Dictionary` suffices
+cashew is a Swift library for content-addressed data: immutable Merkle radix
+tries in which every node is addressed by the hash of its bytes (a CID),
+loads on demand, and shares unchanged branches with earlier versions. Lattice
+keeps chain state, each block's transaction set and the child-chain map as
+cashew `MerkleDictionary` trees, and embeds their roots in blocks as CIDs.
 
 ## Quick example
 
@@ -34,135 +16,116 @@ dict = try dict.inserting(key: "alice", value: "engineer")
 dict = try dict.inserting(key: "bob", value: "designer")
 
 let volume = try VolumeImpl(node: dict)
-print(volume.rawCID) // "baguqeera..." — unique fingerprint of this exact data
+print(volume.rawCID) // "bafyrei...": the fingerprint of this exact data
 
 // Persist one complete storage boundary
 try await volume.store(storer: myStore)
 ```
 
-Every version of the data gets a unique CID. Insert one more key and the CID changes, but the branches you didn't touch keep their CIDs and are shared with the previous version.
+Every version of the data has its own CID. Insert one more key and the root
+CID changes, but the branches you did not touch keep their CIDs and are
+shared with the previous version.
 
 ## Key concepts
 
-- **Content addressing** — every node is identified by a CID, a hash of its deterministic DAG-CBOR serialization. Identity is derived from content, not location, so the same data can be stored and fetched anywhere and verified without trusting the source.
-- **Headers and sparse DAGs** — a `Header` is a smart pointer holding a CID and, optionally, the node it refers to. `node == nil` means "unresolved": you know the hash but haven't loaded the data. `resolve(paths:fetcher:)` pulls only the branches you ask for, while `store(paths:storer:)` persists exactly the blocks the same resolution plan would fetch. Batched reads use `ContentSource`, and `resolve(..., cache:)` can retain verified fetched blocks explicitly.
-- **Merkle data structures** — `MerkleDictionary` is the top-level key-value map, dispatching by first character into a compressed radix trie. `MerkleArray` is an append-only ordered collection backed by a dictionary with 256-bit binary keys; `MerkleSet` is a membership-only set. All share the same content-addressing, resolution, transform, and proof machinery.
-- **Transforms** — mutations (`insert` / `update` / `delete`) applied via `transform(transforms:)` or the per-key `inserting`/`mutating`/`deleting` helpers. Each returns a new tree with recomputed CIDs for the changed nodes only.
-- **Proofs** — sparse Merkle proofs materialize the minimal subtree needed to verify that a key exists, doesn't exist, or can be modified, leaving unrelated branches as CID stubs.
-- **Volumes** — a `Volume` is a `Header` subtype marking an independently fetchable and retainable boundary in the DAG. Cashew emits each selected boundary as one complete `SerializedVolume`; nested Volumes are selected with `StorageStrategy.targeted` or `.recursive` paths that follow the same traversal rules as resolution. Relationships remain encoded only in the content-addressed nodes.
+| Term | Meaning |
+| --- | --- |
+| CID | The identifier of a node: the SHA2-256 hash of its deterministic DAG-CBOR serialization. Identity comes from content, not location. |
+| Node | One piece of data in the tree. It refers to its children by CID. |
+| Header | A reference to a node: a CID and, optionally, the loaded node. `node == nil` means the hash is known and the data is not loaded. |
+| Resolution | Loading the nodes behind Headers from a store, only along the paths asked for. |
+| Merkle structures | `MerkleDictionary` (key-value map), `MerkleArray` (append-only list) and `MerkleSet` (membership), all built on one radix trie. |
+| Transform | An insert, update or delete. It returns a new tree with new CIDs for the changed nodes only. |
+| Proof | The smallest subtree that proves a key exists, is absent, or can be changed. Unrelated branches stay as CIDs. |
+| Volume | A Header that marks a storage boundary. See [Volume](#volume). |
 
-## Installation
+### Content addressing
+
+Equal plaintext content always has the same CID, and any change to the
+content changes the CID. A reader can therefore fetch a node from anywhere
+and check it against the CID it asked for, without trusting the source.
+
+An encrypted node's CID is the hash of its ciphertext, and each encryption
+uses a fresh random nonce. Encrypting the same content twice gives two
+different CIDs. [cashew encryption](docs/encryption.md) explains this.
+
+### Volume
+
+A `Volume` is a `Header` that marks a boundary in the tree. The Volume's root
+and every node below it, down to the next Volume, form one unit that is
+stored and retained on its own.
+
+- Storing a Volume emits that unit as one complete `SerializedVolume`: the
+  root CID and the `(CID, bytes)` entry of every node in the boundary.
+- Volumes nest. A nested Volume is a separate unit and is never part of its
+  parent's entries. `StorageStrategy.targeted` and `.recursive` paths select
+  which nested Volumes a store call also emits.
+- Marking a Header as a Volume changes no CID. Resolution treats a Volume
+  like any other Header.
+- Relationships between Volumes exist only in the content-addressed nodes.
+
+[cashew architecture](docs/architecture.md#volumes) describes how Volumes are
+stored.
+
+### When to use it
+
+| Good fit | Not a fit |
+| --- | --- |
+| Content-addressable storage backends (IPFS, CAS databases) | High-throughput mutable key-value stores: cashew is immutable and every write allocates |
+| Versioned state where every mutation must be auditable | Data that does not need content addressing or integrity guarantees |
+| Distributed systems exchanging tamper-evident data | In-memory caches where a `Dictionary` suffices |
+| Selective encryption: some fields public, some private, one structure | |
+| Proofs about specific keys without the full dataset | |
+
+## Boundary
+
+| cashew owns | The caller owns |
+| --- | --- |
+| Serializing nodes and computing CIDs | The storage engine, behind the `Fetcher`, `ContentSource`, `Storer` and `VolumeStorer` protocols |
+| Walking the tree to resolve, store, transform and prove | Which paths to resolve, store or prove |
+| Checking every fetched or emitted block against its CID | Retention, peer selection and workflow completeness |
+| Emitting each selected Volume complete | Validity and canonicity of the data |
+| Encrypting and decrypting nodes with the keys it is given | Keys and key management, behind `KeyProvider` |
+
+## Documentation
+
+Published at [lattice.build/docs](https://lattice.build/docs/protocol/cashew/)
+from the files below.
+
+| Page | What it covers |
+| --- | --- |
+| [cashew architecture](docs/architecture.md) | How the library is built: content addressing and CID computation, the `Node` and `Header` types, lazy resolution and its strategies, Volumes, and the storage protocols. |
+| [cashew data structures](docs/data-structures.md) | The radix trie, `MerkleDictionary`, `MerkleArray` and `MerkleSet`, sparse Merkle proofs, diffing, transforms, and the query language with its execution model. |
+| [cashew encryption](docs/encryption.md) | How to encrypt parts of a tree, the three strategies, key management, and how encryption interacts with CIDs and transforms. |
+| [cashew invariants](docs/correctness-invariants.md) | The rules a change to cashew's storage must keep, each with its ID and the tests that enforce it. |
+
+## Install
 
 Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/0xLattice/cashew.git", from: "1.0.0")
+    .package(url: "https://github.com/0xLattice/cashew.git", from: "5.2.0")
 ]
 ```
 
 Requires Swift 6.0+ (macOS 12+, iOS 15+, watchOS 8+, tvOS 15+).
 
-## Usage
-
-### Creating and mutating a dictionary
-
-```swift
-import cashew
-
-var dict = MerkleDictionaryImpl<String>()
-dict = try dict.inserting(key: "alice", value: "engineer")
-dict = try dict.inserting(key: "bob", value: "designer")
-
-let value = try dict.get(key: "alice")        // Optional("engineer")
-
-dict = try dict.mutating(key: "bob", value: "lead designer")
-dict = try dict.deleting(key: "alice")
-
-let keys: Set<String> = try dict.allKeys()
-let pairs: [String: String] = try dict.allKeysAndValues()
+```bash
+swift test
 ```
 
-### Content addressability and lazy loading
-
-A `Header` can hold just a CID and resolve its data later from any backend:
-
-```swift
-struct IPFSFetcher: Fetcher {
-    func fetch(rawCid: String) async throws -> Data {
-        // fetch from IPFS, a database, or any content-addressable store
-    }
-}
-
-var paths = ArrayTrie<ResolutionStrategy>()
-paths.set(["users", "a"], value: .targeted)  // fetch just this node
-paths.set(["config"], value: .recursive)     // fetch the entire subtree
-paths.set(["posts"], value: .list)           // fetch structure only, values stay CID-only
-
-let root = HeaderImpl<MerkleDictionaryImpl<String>>(rawCID: rootCID)
-let resolved = try await root.resolve(paths: paths, fetcher: IPFSFetcher())
-
-// Persist exactly the materialized blocks selected by the same path language.
-try await resolved.store(paths: paths, storer: blockStore)
-
-// Or populate a verified read-through cache while resolving.
-let cached = try await root.resolve(
-    paths: paths,
-    fetcher: IPFSFetcher(),
-    cache: blockStore
-)
-```
-
-Same content always yields the same CID, so equal trees are interchangeable references:
-
-```swift
-let h1 = try HeaderImpl(node: dict)
-let h2 = try HeaderImpl(node: dict)
-assert(h1.rawCID == h2.rawCID)               // same content → same CID
-```
-
-### Sparse Merkle proofs
-
-Generate the minimal subtree that proves specific properties about keys:
-
-```swift
-var proofPaths = ArrayTrie<SparseMerkleProof>()
-proofPaths.set(["alice"], value: .existence)   // prove key exists
-proofPaths.set(["dave"],  value: .insertion)   // prove key absent (safe to insert)
-proofPaths.set(["bob"],   value: .mutation)    // prove key exists (can be updated)
-proofPaths.set(["carol"], value: .deletion)    // prove key + neighbors (can be deleted)
-
-let proof = try await dictionary.proof(paths: proofPaths, fetcher: myFetcher)
-// proof contains only the nodes needed to verify these properties
-```
-
-The library also supports batch transforms, `MerkleArray` range queries, `MerkleSet` operations, AES-GCM encryption with per-path strategies, structural diffing, and a string query language. See the documentation below.
-
-## Documentation
-
-Published at [lattice.build/docs](https://lattice.build/docs/protocol/cashew/) from the files below.
-
-- [Architecture](docs/architecture.md) — how cashew is built: the `Node`/`Header` model, content-addressing and CID generation, resolution and the fetcher/storer boundary, volumes, encryption, and the query execution model.
-- [Data structures](docs/data-structures.md) — the data-structure, proof, and query specification: the radix trie, `MerkleDictionary`/`MerkleArray`/`MerkleSet`, resolution strategies, sparse Merkle proofs, transforms, and diffing.
-
-## Dependencies
-
-All content-addressing primitives come from the [swift-libp2p](https://github.com/swift-libp2p) and Apple toolchains:
+### Dependencies
 
 | Package | Purpose |
-|---------|---------|
-| [ArrayTrie](https://github.com/0xLattice/ArrayTrie) | Path-based traversal of resolution/transform/proof specs |
+| --- | --- |
+| [ArrayTrie](https://github.com/0xLattice/ArrayTrie) | Path-based traversal of resolution, transform and proof specs |
+| [DagCBORKit](https://github.com/0xLattice/DagCBORKit) | DAG-CBOR encoding |
 | [swift-crypto](https://github.com/apple/swift-crypto) | SHA2-256 hashing and AES-GCM encryption |
 | [swift-cid](https://github.com/swift-libp2p/swift-cid) | IPFS CIDv1 content identifiers |
 | [swift-multicodec](https://github.com/swift-libp2p/swift-multicodec) | Codec identifiers (dag-json, dag-cbor) |
 | [swift-multihash](https://github.com/swift-libp2p/swift-multihash) | Self-describing hash format |
 | [swift-collections](https://github.com/apple/swift-collections) | Standard collections |
-
-## Running tests
-
-```bash
-swift test
-```
 
 ## License
 

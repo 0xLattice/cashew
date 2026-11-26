@@ -1,16 +1,18 @@
-# cashew Data Structures
+# cashew data structures
 
-This document specifies the data structures cashew provides and the algorithms
-that operate on them. For how the library is assembled, the content-addressing
-model, lazy resolution, Volumes, and the persistence boundary, see
-[architecture.md](architecture.md).
+The data structures cashew provides and the algorithms that operate on them:
+the radix trie, the dictionary, array and set built on it, proofs, diffing,
+transforms and the query language. For how the library is assembled, content
+addressing, lazy resolution, Volumes, and the persistence boundary, see
+[cashew architecture](architecture.md). For encryption, see
+[cashew encryption](encryption.md).
 
 Throughout, *protocol* means an abstract type with default behavior in
 extensions, and *Impl* means a concrete `struct` that supplies storage and
 `Codable`. The relationships are summarized in
-[architecture.md §4](architecture.md#4-protocol--impl-hierarchy).
+[Protocols and implementations](architecture.md#protocols-and-implementations).
 
-## 1. The Radix Trie
+## The radix trie
 
 Every collection in cashew is built on a compressed (path-compressed) radix
 trie. The trie node is `RadixNode`
@@ -68,9 +70,9 @@ produces exactly one trie shape — and therefore one root CID.
 `[SortedEntry<ChildType>]` sorted by key character
 (`Sources/cashew/MerkleDataStructures/SortedEntry.swift`), not as an unordered
 map, so encoding is reproducible across platforms (see
-[architecture.md §3](architecture.md#3-content-addressing-model)).
+[Canonical serialization](architecture.md#canonical-serialization)).
 
-## 2. MerkleDictionary
+## MerkleDictionary
 
 `MerkleDictionary` (`Sources/cashew/MerkleDataStructures/MerkleDictionary.swift`)
 is the string→value map that fronts the radix trie. The root is *not* itself a
@@ -106,7 +108,21 @@ Operations (all returning a new structurally-shared root):
 The `count` is maintained incrementally by the insert/delete operations rather
 than recomputed.
 
-## 3. MerkleArray
+```swift
+var dict = MerkleDictionaryImpl<String>()
+dict = try dict.inserting(key: "alice", value: "engineer")
+dict = try dict.inserting(key: "bob", value: "designer")
+
+let value = try dict.get(key: "alice")        // Optional("engineer")
+
+dict = try dict.mutating(key: "bob", value: "lead designer")
+dict = try dict.deleting(key: "alice")
+
+let keys: Set<String> = try dict.allKeys()
+let pairs: [String: String] = try dict.allKeysAndValues()
+```
+
+## MerkleArray
 
 `MerkleArray` (`Sources/cashew/MerkleDataStructures/MerkleArray.swift`) is an
 append-only ordered collection that *is* a `MerkleDictionary`
@@ -123,7 +139,7 @@ enumeration and range scans correct.
 - `first()` / `last()` — `get(at: 0)` / `get(at: count - 1)`.
 - `append(contentsOf:)` — appends each element of another array in index order.
 
-## 4. MerkleSet
+## MerkleSet
 
 `MerkleSet` (`Sources/cashew/MerkleDataStructures/MerkleSet.swift`) is a
 `MerkleDictionary` specialized to `ValueType == String` that stores each member
@@ -137,7 +153,7 @@ as a key with the empty string `""` as its value. Concrete: `MerkleSetImpl`.
   each implemented in terms of the membership operations above and returning a
   new set.
 
-## 5. Sparse Merkle Proofs
+## Sparse Merkle proofs
 
 A proof is a *pruned tree*: the same `Header`/`Node` types, resolved only along
 the witness paths needed to verify a claim about a set of keys, with everything
@@ -155,6 +171,17 @@ enum SparseMerkleProof: Int, Codable, Sendable {
 
 Proofs are requested as an `ArrayTrie<SparseMerkleProof>` and built by
 `proof(paths:fetcher:)`:
+
+```swift
+var proofPaths = ArrayTrie<SparseMerkleProof>()
+proofPaths.set(["alice"], value: .existence)   // prove key exists
+proofPaths.set(["dave"],  value: .insertion)   // prove key absent (safe to insert)
+proofPaths.set(["bob"],   value: .mutation)    // prove key exists (can be updated)
+proofPaths.set(["carol"], value: .deletion)    // prove key + neighbors (can be deleted)
+
+let proof = try await dictionary.proof(paths: proofPaths, fetcher: myFetcher)
+// proof contains only the nodes needed to verify these properties
+```
 
 - **Entry** — `Header.proof(paths:fetcher:)`
   (`Sources/cashew/Proofs/Header+proofs.swift`) loads its node if needed and
@@ -188,7 +215,7 @@ each CID bottom-up, and accepts the proof iff the computed root CID equals the
 expected one. The `deletion` case additionally pulls in grandchildren so the
 verifier can apply the deletion locally and confirm the resulting root.
 
-## 6. Diffing
+## Diffing
 
 `CashewDiff` (`Sources/cashew/Diff/CashewDiff.swift`) is the structural
 difference between two `MerkleDictionary` roots:
@@ -216,7 +243,7 @@ struct CashewDiff {
 and `description` renders a human-readable `+`/`-`/`~` tree. Diffing is a derived
 read over resolved trees; it performs no fetching itself.
 
-## 7. Transforms (Batch Mutation)
+## Transforms
 
 A `Transform` (`Sources/cashew/Transform/Transform.swift`) is one of:
 
@@ -250,38 +277,10 @@ dictionary (creating an empty nested dictionary on demand).
 Transforms are the bridge from a high-level edit to a new structurally-shared
 root: only the paths from changed leaves to the root are rebuilt; untouched
 subtrees keep their existing headers and CIDs. The optional `keyProvider`
-re-encrypts rewritten nodes whose originals were encrypted (see §9).
+re-encrypts rewritten nodes whose originals were encrypted (see
+[Transforms on encrypted trees](encryption.md#transforms-on-encrypted-trees)).
 
-## 8. Per-Node Encryption
-
-Encryption is applied selectively across a subtree via an
-`ArrayTrie<EncryptionStrategy>`. `EncryptionStrategy`
-(`Sources/cashew/Encryption/EncryptionStrategy.swift`):
-
-```swift
-enum EncryptionStrategy {
-    case targeted(SymmetricKey)    // explicitly marked leaf values
-    case list(SymmetricKey)        // direct children, one level
-    case recursive(SymmetricKey)   // the entire subtree
-}
-```
-
-`Node.encrypt(encryption:)` (`Sources/cashew/Encryption/Node+encrypt.swift`)
-walks the structure and re-wraps the selected headers as encrypted headers.
-Encrypting a node serializes it (DAG-CBOR), AES-256-GCM-seals the bytes with the
-strategy's key (`EncryptionHelper`, `Sources/cashew/Core/EncryptionHelper.swift`),
-and computes the CID over the *ciphertext*. The header records an
-`EncryptionInfo { keyHash, iv }` (`Sources/cashew/Core/EncryptionInfo.swift`) —
-the SHA-256 hash of the key (for key lookup) and the GCM nonce.
-
-On read, `Header.decryptIfNeeded` uses the `Fetcher`-as-`KeyProvider` to look up
-the key by `keyHash` and decrypt before decoding. On write,
-`Header.store` and `Volume.store` re-seal from `encryptionInfo` using the same
-nonce so the stored ciphertext (and thus the CID) is stable. Encrypted and plaintext
-nodes coexist in the same tree; only headers with non-nil `encryptionInfo` are
-encrypted, and a header's textual form is `enc:<keyHash>:<iv>:<cid>`.
-
-## 9. The Query Language
+## The query language
 
 cashew ships a small pipe-delimited query language over any `Node`. The pipeline
 is **parse → compile → execute**:
@@ -292,7 +291,7 @@ input string  ──CashewParser.parse──▶  [CashewExpression]
               ──Node.execute(plan:)──▶  (newNode, CashewResult)
 ```
 
-### 9.1 Grammar
+### Grammar
 
 `CashewParser` (`Sources/cashew/Query/CashewParser.swift`) tokenizes into words,
 quoted strings (`"..."`/`'...'`, with `\` escapes), integers, `=`, and `|`, then
@@ -317,7 +316,7 @@ case-insensitive (lowercased during tokenization). Supported commands:
 | `delete "k"` / `remove "k"` | `.delete(k)` | |
 | `append "v"` | `.append(v)` | array |
 
-### 9.2 Compilation
+### Compilation
 
 `CashewPlan.compile` (`Sources/cashew/Query/CashewPlan.swift`) folds the
 expression list into a sequence of `CashewStep`s:
@@ -335,7 +334,7 @@ step. `CashewPlan.resolutionPaths()` additionally derives the
 (e.g. `get`/`contains`/`set` → `.targeted` at that key; `keys`/`values` →
 `.recursive`; `count` → `.list`).
 
-### 9.3 Execution
+### Execution
 
 `Node.execute(plan:)` (`Sources/cashew/Query/CashewExecutor.swift`) threads a
 `current` node through the steps. A `.transform` step replaces `current` with the
@@ -356,7 +355,7 @@ property-based defaults; `MerkleDictionary.execute(plan:fetcher:)` first resolve
 the plan's `resolutionPaths()` against the `Fetcher`, then runs the plan
 in-memory.
 
-### 9.4 Example
+### Example
 
 ```swift
 let dict = MerkleDictionaryImpl<String>()       // string → string

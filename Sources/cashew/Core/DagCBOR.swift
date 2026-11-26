@@ -26,7 +26,22 @@ public struct DagCBOR {
 
     // MARK: - Encode
 
-    public static func encode<T: Encodable>(_ value: T) throws -> Data {
+    @inlinable public static func encode<T: Encodable>(_ value: T) throws -> Data {
+        if let own = T.self as? any DagCBORCodable.Type {
+            return try Data(write(value, as: own))
+        }
+        return try encodeThroughCodable(value)
+    }
+
+    @inlinable static func write<T, U: DagCBORCodable>(_ value: T, as _: U.Type) throws -> [UInt8] {
+        var writer = DagCBORWriter()
+        try (value as! U).writeDagCBOR(to: &writer)
+        return writer.bytes
+    }
+
+    /// `encode` through `Codable` alone, whether or not the type writes its
+    /// own DAG-CBOR: what a ``DagCBORCodable`` writer must equal.
+    public static func encodeThroughCodable<T: Encodable>(_ value: T) throws -> Data {
         let root = CBOREncodingStorage()
         try value.encode(to: DagCBOREncoder(storage: root, codingPath: []))
         let cborValue = try root.toCBORValue()
@@ -42,12 +57,46 @@ public struct DagCBOR {
     /// rule refuses every second spelling of a value (trailing bytes,
     /// non-minimal heads, unsorted or repeated keys, ignored fields, ...),
     /// so one value has one CID.
-    public static func decode<T: Codable>(_ type: T.Type, from data: Data) throws -> T {
-        var offset = 0
-        let value = try parseValue(data, offset: &offset)
-        let decoded = try T(from: DagCBORDecoder(value: value, codingPath: []))
+    ///
+    /// A type that reads its own DAG-CBOR (``DagCBORCodable``) is read and
+    /// written by that, under this same rule.
+    @inlinable public static func decode<T: Codable>(_ type: T.Type, from data: Data) throws -> T {
+        if let own = T.self as? any DagCBORCodable.Type {
+            return try read(data, as: own) as! T
+        }
+        let decoded = try parseThroughCodable(type, from: data)
         guard try encode(decoded) == data else { throw DagCBORError.nonCanonical }
         return decoded
+    }
+
+    @inlinable static func read<U: DagCBORCodable>(_ data: Data, as _: U.Type) throws -> U {
+        var reader = DagCBORReader(data)
+        let decoded = try U(dagCBOR: &reader)
+        guard try write(decoded, as: U.self) == reader.bytes else { throw DagCBORError.nonCanonical }
+        return decoded
+    }
+
+    /// `decode` through `Codable` alone, whether or not the type reads its
+    /// own DAG-CBOR: the verdicts a ``DagCBORCodable`` reader must give.
+    public static func decodeThroughCodable<T: Codable>(_ type: T.Type, from data: Data) throws -> T {
+        let decoded = try parseThroughCodable(type, from: data)
+        guard try encodeThroughCodable(decoded) == data else { throw DagCBORError.nonCanonical }
+        return decoded
+    }
+
+    @usableFromInline static func parseThroughCodable<T: Codable>(_ type: T.Type, from data: Data) throws -> T {
+        var offset = 0
+        let value = try parseValue(data, offset: &offset)
+        return try T(from: DagCBORDecoder(value: value, codingPath: []))
+    }
+
+    /// Whether map key `a` sorts before `b` in the canonical order: shorter
+    /// first, then bytewise.
+    @inlinable public static func keyPrecedes(_ a: String, _ b: String) -> Bool {
+        let aLength = a.utf8.count
+        let bLength = b.utf8.count
+        if aLength != bLength { return aLength < bLength }
+        return a.utf8.lexicographicallyPrecedes(b.utf8)
     }
 
     // MARK: - CBOR Parser
@@ -229,12 +278,7 @@ public struct DagCBOR {
         case .map(let entries):
             guard entries.count <= maxCollectionCount else { throw DagCBORError.collectionTooLarge }
             // Canonical key order: shorter keys first, then bytewise.
-            let sortedEntries = entries.sorted { a, b in
-                let aLen = a.0.utf8.count
-                let bLen = b.0.utf8.count
-                if aLen != bLen { return aLen < bLen }
-                return a.0.utf8.lexicographicallyPrecedes(b.0.utf8)
-            }
+            let sortedEntries = entries.sorted { keyPrecedes($0.0, $1.0) }
             writeUnsigned(UInt64(sortedEntries.count), majorType: 5, to: &output)
             for (key, value) in sortedEntries {
                 let keyBytes = Data(key.utf8)

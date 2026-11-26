@@ -47,12 +47,12 @@ private let sharedJSONEncoder: JSONEncoder = {
 }()
 
 public extension Node {
-    init?(data: Data) {
+    @inlinable init?(data: Data) {
         guard let decoded = try? DagCBOR.decode(Self.self, from: data) else { return nil }
         self = decoded
     }
 
-    func toData() -> Data? {
+    @inlinable func toData() -> Data? {
         return try? DagCBOR.encode(self)
     }
 

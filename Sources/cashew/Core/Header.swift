@@ -22,7 +22,7 @@ func canonicalCID(_ rawCID: String) -> String {
 
 /// The text of a CID built by `CID(version:codec:multihash:)`, which gives a
 /// v1 CID the base32 multibase: byte for byte `toBaseEncodedString`.
-func cidText(_ cid: CID) -> String {
+@usableFromInline func cidText(_ cid: CID) -> String {
     cid.version == .v1 ? base32Multibase(cid.rawBuffer) : cid.toBaseEncodedString
 }
 
@@ -32,7 +32,7 @@ private let base32Digits: StaticString = "abcdefghijklmnopqrstuvwxyz234567"
 /// text `CID.toBaseEncodedString` gives every v1 CID. Encoded here, straight
 /// into the string's storage, because the library's encoder pads and then
 /// strips the padding one character at a time.
-func base32Multibase(_ bytes: [UInt8]) -> String {
+@usableFromInline func base32Multibase(_ bytes: [UInt8]) -> String {
     String(unsafeUninitializedCapacity: 1 + (bytes.count * 8 + 4) / 5) { out in
         let digits = base32Digits.utf8Start
         out[0] = UInt8(ascii: "b")
@@ -62,18 +62,26 @@ func base32Multibase(_ bytes: [UInt8]) -> String {
 /// No other text spells these bytes, and `canonicalCID` maps such text to
 /// itself.
 func isCanonicalDagCBORSHA256CID(_ text: String) -> Bool {
-    canonicalDagCBORSHA256Digest(text) != nil
+    readCanonicalDagCBORSHA256CID(text) { _, _ in }
 }
 
 /// The 32-byte digest `text` names when it is the canonical text of a CIDv1,
 /// dag-cbor, sha2-256 CID (see ``isCanonicalDagCBORSHA256CID(_:)``); nil for
 /// any other text.
 func canonicalDagCBORSHA256Digest(_ text: String) -> [UInt8]? {
+    var digest = [UInt8](repeating: 0, count: 32)
+    guard readCanonicalDagCBORSHA256CID(text, { digest[$0] = $1 }) else { return nil }
+    return digest
+}
+
+/// Whether `text` is that canonical text, passing each digest byte and its
+/// index to `digestByte` as it is read.
+@inline(__always)
+private func readCanonicalDagCBORSHA256CID(_ text: String, _ digestByte: (Int, UInt8) -> Void) -> Bool {
     var text = text
     return text.withUTF8 { utf8 in
         // "b" and 58 digits: 36 bytes is 288 bits, 2 short of 58 digits.
-        guard utf8.count == 59, utf8[0] == UInt8(ascii: "b") else { return nil }
-        var digest = [UInt8](repeating: 0, count: 32)
+        guard utf8.count == 59, utf8[0] == UInt8(ascii: "b") else { return false }
         var buffer: UInt32 = 0
         var bits = 0
         var index = 0
@@ -83,7 +91,7 @@ func canonicalDagCBORSHA256Digest(_ text: String) -> [UInt8]? {
             switch character {
             case UInt8(ascii: "a")...UInt8(ascii: "z"): value = UInt32(character &- UInt8(ascii: "a"))
             case UInt8(ascii: "2")...UInt8(ascii: "7"): value = UInt32(character &- UInt8(ascii: "2")) &+ 26
-            default: return nil
+            default: return false
             }
             buffer = buffer << 5 | value
             bits += 5
@@ -92,14 +100,13 @@ func canonicalDagCBORSHA256Digest(_ text: String) -> [UInt8]? {
             let byte = UInt8(truncatingIfNeeded: buffer >> UInt32(bits))
             if index < 4 {
                 let prefix: UInt8 = index == 0 ? 0x01 : index == 1 ? 0x71 : index == 2 ? 0x12 : 0x20
-                guard byte == prefix else { return nil }
+                guard byte == prefix else { return false }
             } else {
-                digest[index - 4] = byte
+                digestByte(index - 4, byte)
             }
             index += 1
         }
-        guard index == 36, bits == 2, buffer & 0b11 == 0 else { return nil }
-        return digest
+        return index == 36 && bits == 2 && buffer & 0b11 == 0
     }
 }
 
@@ -164,7 +171,7 @@ public extension Header {
         self = Self(rawCID: rawCID, node: node, encryptionInfo: nil)
     }
 
-    init(node: NodeType) throws {
+    @inlinable init(node: NodeType) throws {
         self = Self(rawCID: try Self.createSyncCID(for: node, codec: Self.defaultCodec), node: node, encryptionInfo: nil)
     }
 
@@ -179,8 +186,13 @@ public extension Header {
         return Self(rawCID: cid, node: node, encryptionInfo: nil)
     }
 
-    private static func computeCID(for node: NodeType, codec: Codecs) throws -> String {
+    @inlinable static func computeCID(for node: NodeType, codec: Codecs) throws -> String {
         guard let data = node.toData() else { throw DataErrors.serializationFailed }
+        // CIDv1 dag-cbor sha2-256 is the bytes `01 71 12 20` and the digest:
+        // its text is spelled here without building the `CID`.
+        if codec == .dag_cbor {
+            return base32Multibase([0x01, 0x71, 0x12, 0x20] + Array(SHA256.hash(data: data)))
+        }
         let multihash = try Multihash(raw: data, hashedWith: .sha2_256)
         let cid = try CID(version: .v1, codec: codec, multihash: multihash)
         return cidText(cid)

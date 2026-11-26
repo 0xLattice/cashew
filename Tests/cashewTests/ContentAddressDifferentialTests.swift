@@ -86,6 +86,16 @@ struct ContentAddressDifferentialTests {
         return String(decoding: utf8, as: UTF8.self)
     }
 
+    @Test("A node's dag-cbor CID is the one the CID library builds")
+    func nodeCIDIsTheLibrarys() throws {
+        for value in [Int.min, -1, 0, 1, 23, 24, 255, 256, 65_536, Int.max] {
+            let node = TestScalar(val: value)
+            let expected = try HeaderImpl<TestScalar>.standardCID(of: try #require(node.toData()))
+            #expect(try HeaderImpl(node: node).rawCID == expected)
+            #expect(try VolumeImpl(node: node).rawCID == expected)
+        }
+    }
+
     @Test("Fixed texts get the same answer")
     func fixed() throws {
         var tally = Tally()

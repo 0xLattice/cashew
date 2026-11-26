@@ -24,7 +24,7 @@ let package = Package(
         .package(url: "https://github.com/swift-libp2p/swift-cid.git", from: "0.0.1"),
         .package(url: "https://github.com/swift-libp2p/swift-multicodec.git", from: "0.0.1"),
         .package(url: "https://github.com/swift-libp2p/swift-multihash.git", from: "0.0.1"),
-        .package(url: "https://github.com/0xLattice/DagCBORKit.git", revision: "bc231618f918d34d0f8d465a7e6b7444daf5701f"),
+        .package(url: "https://github.com/0xLattice/DagCBORKit.git", revision: "05dc3b39e3cbbd4f772bdbab2b3b36a4ca5db7f3"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.

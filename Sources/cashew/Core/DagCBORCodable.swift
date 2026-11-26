@@ -109,7 +109,7 @@ extension DagCBORReader {
     /// A trie node's children: an array of `{key, value}` entries, keyed by
     /// each key's first character, as `KeyedDecodingContainer.decodeChildren`
     /// reads them.
-    @inlinable @usableFromInline mutating func readChildren<Child: DagCBORCodable>(_: Child.Type) throws -> [Character: Child] {
+    @inlinable mutating func readChildren<Child: DagCBORCodable>(_: Child.Type) throws -> [Character: Child] {
         let count = try readArrayCount()
         var children: [Character: Child] = [:]
         children.reserveCapacity(count)
@@ -131,7 +131,7 @@ extension DagCBORReader {
 extension DagCBORWriter {
     /// A trie node's children as `Codable` encoding writes them: entries
     /// `{key, value}` in `String` order of their keys.
-    @inlinable @usableFromInline mutating func writeChildren<Child: DagCBORCodable>(_ children: [Character: Child]) throws {
+    @inlinable mutating func writeChildren<Child: DagCBORCodable>(_ children: [Character: Child]) throws {
         try writeArrayHeader(count: children.count)
         for (key, child) in children.sorted(by: { String($0.key) < String($1.key) }) {
             try writeMapHeader(count: 2)

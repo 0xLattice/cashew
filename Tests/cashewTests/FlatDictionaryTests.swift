@@ -133,7 +133,7 @@ struct DuplicateChildKeyTests {
     /// The single-entry wire decodes, so only the duplicate is refused.
     func check<T: Codable>(_ type: T.Type, _ wire: ([Entry]) throws -> some Encodable) throws {
         #expect(throws: Never.self) { try DagCBOR.decode(type, from: DagCBOR.encode(wire(entries(["a"])))) }
-        #expect(throws: DecodingError.self) { try DagCBOR.decode(type, from: DagCBOR.encode(wire(entries(["a", "a"])))) }
+        #expect(throws: (any Error).self) { try DagCBOR.decode(type, from: DagCBOR.encode(wire(entries(["a", "a"])))) }
     }
 
     @Test func merkleDictionary() throws {

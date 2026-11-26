@@ -37,6 +37,46 @@ struct DagCBORCodableTests {
         ]
     }
 
+    typealias Dictionary64 = MerkleDictionaryImpl<UInt64>
+    typealias VolumeDictionary = VolumeMerkleDictionaryImpl<String>
+    typealias Node64 = RadixNodeImpl<UInt64>
+    typealias VolumeNode = VolumeRadixNodeImpl<String>
+
+    /// Children keyed by ASCII, accented, combining and multi-byte
+    /// characters, which `String` order sorts differently from bytes.
+    static func children<Child>(_ link: (String) -> Child) -> [[Character: Child]] {
+        [
+            [:],
+            ["a": link(standard)],
+            ["b": link(standard), "a": link("not a cid"), "Z": link(""), "é": link(standard),
+             "a\u{308}x".first!: link(standard), "日": link("café"), "😀": link(standard)],
+        ]
+    }
+
+    static var tries: (dictionaries: [Dictionary64], volumeDictionaries: [VolumeDictionary], nodes: [Node64], volumeNodes: [VolumeNode]) {
+        let radix = children { RadixHeaderImpl<UInt64>(rawCID: $0) }
+        let volumeRadix = children { VolumeRadixHeaderImpl<String>(rawCID: $0) }
+        return (
+            radix.flatMap { kids in [0, 1, Int.max, -1].map { Dictionary64(children: kids, count: $0) } },
+            volumeRadix.flatMap { kids in [0, 7].map { VolumeDictionary(children: kids, count: $0) } },
+            radix.flatMap { kids in [nil, 0, 23, 24, .max].flatMap { value in
+                ["", "a", "prefix", "日本"].map { Node64(prefix: $0, value: value, children: kids) }
+            } },
+            volumeRadix.flatMap { kids in [nil, "", "v", "ü"].map { VolumeNode(prefix: "p", value: $0, children: kids) } }
+        )
+    }
+
+    static let values: (texts: [String], bools: [Bool], uint64s: [UInt64], uint16s: [UInt16], uint32s: [UInt32], int64s: [Int64], ints: [Int], arrays: [[UInt16]]) = (
+        ["", "a", "café", String(repeating: "x", count: 300)],
+        [false, true],
+        [0, 23, 24, 255, 256, 65_535, 65_536, .max],
+        [0, 23, 24, .max],
+        [0, 65_536, .max],
+        [.min, -1, 0, 24, .max],
+        [.min, -25, 0, 1, .max],
+        [[], [0], [1, 2, 3], [.max, 0, 24]]
+    )
+
     @Test("Every value is written as Codable writes it")
     func writesCodableBytes() throws {
         for header in Self.headers {
@@ -48,6 +88,24 @@ struct DagCBORCodableTests {
             #expect(try DagCBOR.encode(map) == DagCBOR.encodeThroughCodable(map))
         }
         #expect(try DagCBOR.encode(Self.info) == DagCBOR.encodeThroughCodable(Self.info))
+        func same<T: Codable>(_ values: [T]) throws {
+            for value in values {
+                #expect(try DagCBOR.encode(value) == DagCBOR.encodeThroughCodable(value), "\(T.self)")
+            }
+        }
+        let tries = Self.tries
+        try same(tries.dictionaries)
+        try same(tries.volumeDictionaries)
+        try same(tries.nodes)
+        try same(tries.volumeNodes)
+        try same(Self.values.texts)
+        try same(Self.values.bools)
+        try same(Self.values.uint64s)
+        try same(Self.values.uint16s)
+        try same(Self.values.uint32s)
+        try same(Self.values.int64s)
+        try same(Self.values.ints)
+        try same(Self.values.arrays)
     }
 
     @Test("Every input gets Codable's verdict and value")
@@ -94,6 +152,63 @@ struct DagCBORCodableTests {
         ] {
             try check(Map.self, input)
         }
+        let tries = Self.tries
+        // The first and last child sets of each trie type, every node shape.
+        for dictionary in tries.dictionaries where dictionary.count != 0 || dictionary.children.count > 1 {
+            for input in Self.mutants(of: try DagCBOR.encodeThroughCodable(dictionary)) {
+                try check(Dictionary64.self, input)
+            }
+        }
+        for dictionary in tries.volumeDictionaries.suffix(1) {
+            for input in Self.mutants(of: try DagCBOR.encodeThroughCodable(dictionary)) {
+                try check(VolumeDictionary.self, input)
+            }
+        }
+        for node in tries.nodes where node.prefix == "日本" || node.value == nil {
+            for input in Self.mutants(of: try DagCBOR.encodeThroughCodable(node)) {
+                try check(Node64.self, input)
+            }
+        }
+        for node in tries.volumeNodes.suffix(2) {
+            for input in Self.mutants(of: try DagCBOR.encodeThroughCodable(node)) {
+                try check(VolumeNode.self, input)
+            }
+        }
+        func values<T: Codable>(_ type: T.Type, _ values: [T]) throws {
+            for value in values {
+                for input in Self.mutants(of: try DagCBOR.encodeThroughCodable(value)) {
+                    try check(type, input)
+                }
+            }
+        }
+        try values(String.self, Self.values.texts.dropLast())
+        try values(Bool.self, Self.values.bools)
+        try values(UInt64.self, Self.values.uint64s)
+        try values(UInt16.self, Self.values.uint16s)
+        try values(UInt32.self, Self.values.uint32s)
+        try values(Int64.self, Self.values.int64s)
+        try values(Int.self, Self.values.ints)
+        try values([UInt16].self, Self.values.arrays)
+        // Children no byte mutation reaches: out of order, a repeated or
+        // equivalent first character, an empty or longer key, a null value.
+        func entries(_ list: [(String, [UInt8])]) -> [UInt8] {
+            var writer = DagCBORWriter()
+            writer.writeHead(major: 4, UInt64(list.count))
+            return writer.bytes + list.flatMap { [UInt8](Self.map([("key", Self.text($0.0)), ("value", $0.1)])) }
+        }
+        let child = [UInt8](link)
+        for list in [
+            [("b", child), ("a", child)],
+            [("a", child), ("a", child)],
+            [("é", child), ("e\u{301}", child)],
+            [("", child), ("a", child)],
+            [("ab", child)],
+            [("a", [0xf6])],
+        ] {
+            try check(Dictionary64.self, Self.map([("count", [0x01]), ("children", entries(list))]))
+            try check(Node64.self, Self.map([("prefix", Self.text("p")), ("children", entries(list))]))
+        }
+        try check(Node64.self, Self.map([("value", [0xf6]), ("prefix", Self.text("p")), ("children", entries([]))]))
         #expect(compared > 10_000)
         #expect(accepted > 10)
     }
